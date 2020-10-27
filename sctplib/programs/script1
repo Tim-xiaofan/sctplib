@@ -1,9 +1,10 @@
-
-initialize: ip=192.168.0.1, port=10001, instreams=1, outstreams=1;
+#初始
+initialize: ip=127.0.0.1, port=10001, instreams=1, outstreams=1;
 
 set_payload_header: type=1234, mbu=56, mch=78, jc1=9A, jc2=BC;
-set_payload_body: length=20, contents="abc\64\65\66";
+set_payload_body: length=20, contents="Hello Sctplib";
 
+#Wait for an association(连接)
 wait_for_assoc;
 
 LOOP: times = 3;

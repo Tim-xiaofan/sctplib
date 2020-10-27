@@ -352,11 +352,11 @@ struct SCTP_Instance_Parameters {
     unsigned int pathMaxRetransmits;
     /** maximum initial retransmissions */
     unsigned int maxInitRetransmits;
-    /** from recvcontrol : my receiver window */
+    /** from recvcontrol : my receiver window 接收器窗口*/
     unsigned int myRwnd;
-    /** recvcontrol: delay for delayed ACK in msecs */
+    /** recvcontrol: delay for delayed ACK in msecs 延迟ACK的延迟（以毫秒为单位*/
     unsigned int delay;
-    /** per instance: for the IP type of service field. */
+    /** per instance: for the IP type of service field. 每个实例：用于IP服务类型字段*/
     unsigned char ipTos;
     /** limit the number of chunks queued in the send queue */
     unsigned int maxSendQueue;
