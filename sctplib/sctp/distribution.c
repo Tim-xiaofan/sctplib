@@ -1631,6 +1631,13 @@ static void printAssocList()
  *  that care for their source port must chose a port, clients that do not really
  *  care which source port they use, chose ZERO, and have the implementation chose
  *  a free source port.
+ *  调用sctp_registerInstance初始化一个SCTP实例。
+ *  ULP的每个适应层必须创建自己的SCTP实例，并且
+ *  定义并注册适当的回调函数。
+ *  SCTP实例可以定义自己的端口，或者在此处为零！服务器和客户端
+ *  关心其源端口的端口必须选择一个端口，客户端并不关心其源端端口
+ *  选择零，并实现了选择
+ *  一个空闲的源端口。
  *
  *  @param port                   wellknown port of this sctp-instance
  *  @param noOfLocalAddresses     number of local addresses
@@ -1675,7 +1682,7 @@ sctp_registerInstance(unsigned short port,
     }
 
     if(port == 0) {
-        port = seizePort();
+        port = seizePort();/* free port*/
     }
     else {
         port = allocatePort(port);

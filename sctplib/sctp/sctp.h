@@ -507,7 +507,26 @@ int sctp_initLibrary(void);
  */
 unsigned int sctp_getLibraryVersion(void);
 
-
+/**
+ *  sctp_registerInstance is called to initialize one SCTP-instance.
+ *  Each Adaption-Layer of the ULP must create its own SCTP-instance, and
+ *  define and register appropriate callback functions.
+ *  An SCTP-instance may define an own port, or zero here ! Servers and clients
+ *  that care for their source port must chose a port, clients that do not really
+ *  care which source port they use, chose ZERO, and have the implementation chose
+ *  a free source port.
+ *  调用sctp_registerInstance初始化一个SCTP实例。
+ *  ULP的每个适应层必须创建自己的SCTP实例，并且
+ *  定义并注册适当的回调函数。
+ *  SCTP实例可以定义自己的端口，或者在此处为零！关心其源端口的服务器和客户端
+ *  必须选择一个端口，不关心其源端端口的客户端选择零，并实现了选择一个空闲的源端口。
+ *
+ *  @param port                   wellknown port of this sctp-instance
+ *  @param noOfLocalAddresses     number of local addresses
+ *  @param localAddressList       local address list (pointer to a string-array)
+ *  @param ULPcallbackFunctions   call back functions for primitives passed from sctp to ULP
+ *  @return     instance name of this SCTP-instance or 0 in case of errors, or error code
+ */
 int sctp_registerInstance(unsigned short localPort,
                           unsigned short noOfInStreams,
                           unsigned short noOfOutStreams,
