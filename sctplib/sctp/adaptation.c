@@ -133,10 +133,10 @@
 #ifdef HAVE_SYS_POLL_H
     #include <sys/poll.h>
 #else
-    #define POLLIN     0x001
-    #define POLLPRI    0x002
-    #define POLLOUT    0x004
-    #define POLLERR    0x008
+    #define POLLIN     0x001 /* 有数据可读 */
+    #define POLLPRI    0x002 /* 有紧急时间可读*/
+    #define POLLOUT    0x004 /* 写数据不会导致阻塞 */
+    #define POLLERR    0x008 /* 发生错误 */
 #endif
 
 #ifdef LIBRARY_DEBUG
@@ -248,17 +248,25 @@ adl_random(void)
  * when the FD has already been registered before select() has
  * been called. Otherwise, the event will be reported during the
  * next select() call.
+ * 在select（）调用期间，另一个线程可能会更改FD列表
+ * 修订号保持跟踪那些结果，这些结果在当select被调用之前就已经注册的FD才被报告
  * This solves the following problem:
- * - Thread #1 registers user callback for socket n
+ * - Thread #1 registers user callback for socket n     
+ * - 线程1为socket n注册回调函数
  * - Thread #2 starts select()
+ * - 线程2调用select
  * - A read event on socket n occurs
+ * - socket n发生读事件
  * - extendedPoll() returns
+ * - 返回
  * - Thread #2 sends a notification (e.g. using pthread_condition) to thread #1
+ * - notice to #1
  * - Thread #2 again starts select()
  * - Since Thread #1 has not yet read the data, there is a read event again
  * - Now, the thread scheduler selects the next thread
  * - Thread #1 now gets CPU time, deregisters the callback for socket n
  *      and completely reads the incoming data. There is no more data to read!
+ * - #读入所有数据
  * - Thread #1 again registers user callback for socket n
  * - Now, thread #2 gets the CPU again and can send a notification
  *      about the assumed incoming data to thread #1
@@ -271,11 +279,17 @@ static long revision = 0;
 
 struct extendedpollfd {
    int       fd;
-   short int events;
-   short int revents;
-   long      revision;
+   short int events; /* 请求的事件  */
+   short int revents; /* 返回的事件*/
+   long      revision; /* 修订号 */
 };
 
+/** 后面的3个参数都是NULL
+ *  @param time
+ *  下一个计时器到时间 
+ *  @param count
+ *  描述符数量
+*/
 int extendedPoll(struct extendedpollfd* fdlist,
                  int*                   count,
                  int                    time,
@@ -283,18 +297,18 @@ int extendedPoll(struct extendedpollfd* fdlist,
                  void                   (*unlock)(void* data),
                  void*                  data)
 {
-   struct timeval    timeout;
+   struct timeval    timeout; /* 内核等待时间，到达即放弃等待*/
    struct timeval*   to;
-   fd_set            readfdset;
-   fd_set            writefdset;
-   fd_set            exceptfdset;
+   fd_set            readfdset;/* 可读描述符集 */
+   fd_set            writefdset; /* 可写 */
+   fd_set            exceptfdset; /* 异常 */
    int               fdcount;
    int               n;
    int               ret;
    int i;
 
-   if(time < 0) {
-      to = NULL;
+   if(time < 0) {/* 计时器过时 */
+      to = NULL; 
    }
    else {
       to = &timeout;
@@ -315,13 +329,13 @@ int extendedPoll(struct extendedpollfd* fdlist,
          continue;
       }
       n = MAX(n,fdlist[i].fd);
-      if(fdlist[i].events & (POLLIN|POLLPRI)) {
+      if(fdlist[i].events & (POLLIN|POLLPRI)) {/* 读事件发生 */
          FD_SET(fdlist[i].fd, &readfdset);
       }
-      if(fdlist[i].events & POLLOUT) {
+      if(fdlist[i].events & POLLOUT) { /* 写不会阻塞 */
          FD_SET(fdlist[i].fd, &writefdset);
       }
-      if(fdlist[i].events & (POLLIN|POLLOUT)) {
+      if(fdlist[i].events & (POLLIN|POLLOUT)) { /* 异常 */
          FD_SET(fdlist[i].fd, &exceptfdset);
       }
       fdcount++;
@@ -342,6 +356,7 @@ int extendedPoll(struct extendedpollfd* fdlist,
       /*
        * Increment the revision number by one -> New entries made by
        * another thread during select() call will get this new revision number.
+       * 新版修订号
        */
       revision++;
 
@@ -349,7 +364,7 @@ int extendedPoll(struct extendedpollfd* fdlist,
       if(unlock) {
          unlock(data);
       }
-
+        /*select () 返回就绪描述符数目*/
       ret = select(n + 1, &readfdset, &writefdset, &exceptfdset, to);
 
       if(lock) {
@@ -359,7 +374,7 @@ int extendedPoll(struct extendedpollfd* fdlist,
 
       for(i = 0; i < *count; i++) {
          fdlist[i].revents = 0;
-         if(fdlist[i].revision >= revision) {
+         if(fdlist[i].revision >= revision) { /*清除无效的FD*/
             FD_CLR(fdlist[i].fd, &readfdset);
             FD_CLR(fdlist[i].fd, &writefdset);
             FD_CLR(fdlist[i].fd, &exceptfdset);
@@ -374,8 +389,12 @@ int extendedPoll(struct extendedpollfd* fdlist,
              * has been added by another thread during the poll() call. If this is the
              * case, skip the results here (they will be reported again when select()
              * is called the next time).
+             * 如果fdlist的修订等于当前修订，则fdlist条目
+             * 已在poll（）调用期间由另一个线程添加。如果这是
+             * 这种情况，请跳过此处的结果（在select（）时会再次报告结果
+             * 称为下一次）。
              */
-            if(fdlist[i].revision < revision) {
+            if(fdlist[i].revision < revision) { /* 修订号 < 当前修订号*/
                if((fdlist[i].events & POLLIN) && FD_ISSET(fdlist[i].fd, &readfdset)) {
                   fdlist[i].revents |= POLLIN;
                }
@@ -1245,7 +1264,7 @@ void dispatch_event(int num_of_events)
     guchar src_address[SCTP_MAX_IP_LEN];
     unsigned short portnum=0;
 
-#if !defined (LINUX)
+#if !defined (LINUX)/*非环境Linux*/
     struct ip *iph;
 #else
     struct iphdr *iph;
@@ -1353,6 +1372,7 @@ void dispatch_event(int num_of_events)
 /**
  * function calls the respective callback funtion, that is to be executed as a timer
  * event, passing it two arguments
+ * 函数调用各自的回调函数，该函数将作为计时器*事件执行，并向其传递两个参数
  */
 void dispatch_timer(void)
 {
@@ -1458,6 +1478,7 @@ int init_poll_fds(void)
  *  function to check for events on all poll fds (i.e. open sockets), or else
  *  execute the next timer event. Executed timer events are removed from the list.
  *  Wrapper to poll() -- returns after timeout or read event
+ *  对轮询的包装 -- 超时或有读事件返回
  *  @return  number of events that where seen on the socket fds, 0 for timer event, -1 for error
  *  @author  ajung, dreibh
  */
@@ -1473,6 +1494,7 @@ int adl_extendedEventLoop(void (*lock)(void* data), void (*unlock)(void* data), 
        lock(data);
     }
 
+    /* 下一个计时器到期时间 ms*/
     msecs = get_msecs_to_nexttimer();
 
     /* returns -1 if no timer in list */
@@ -1487,13 +1509,13 @@ int adl_extendedEventLoop(void (*lock)(void* data), void (*unlock)(void* data), 
         return (0);
     }
 
-    /*  print_debug_list(INTERNAL_EVENT_0); */
+    /* print_debug_list(INTERNAL_EVENT_0); */
     result = extendedPoll(poll_fds, &num_of_fds, msecs, lock, unlock, data);
     switch (result) {
-    case -1:
+    case -1:/* err */
         result = 0;
         break;
-    case 0:
+    case 0:/* timeout */
         dispatch_timer();
         break;
     default:
@@ -1515,13 +1537,15 @@ int adl_extendedEventLoop(void (*lock)(void* data), void (*unlock)(void* data), 
  *  function to check for events on all poll fds (i.e. open sockets), or else
  *  execute the next timer event. Executed timer events are removed from the list.
  *  Wrapper to poll() -- returns after timeout or read event
- *    @return  number of events that where seen on the socket fds, 0 for timer event, -1 for error
+ *  检查所有轮询套接字或者计时器时间，计时器时间被执行并且移除对应计时器
+ *  当计时器超时或有读时间时返回
+ *  @return  number of events that where seen on the socket fds, 0 for timer event, -1 for error
  *  @author  ajung
  *  @author  dreibh
  */
 int adl_eventLoop()
 {
-#ifdef WIN32
+#ifdef WIN32 //如果当前的宏已被定义过,编译以下片段。即在win os中执行以下代码
 
    int n, ret,i, j;
    WSANETWORKEVENTS  ne;
@@ -1602,7 +1626,7 @@ int adl_eventLoop()
          }
       }
       return 1;
-#else
+#else //linux 执行以下代码
 
    return(adl_extendedEventLoop(NULL, NULL, NULL));
 #endif

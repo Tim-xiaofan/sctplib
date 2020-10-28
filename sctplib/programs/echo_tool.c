@@ -581,8 +581,8 @@ int main(int argc, char **argv)
 {
     int sctpInstance;
     SCTP_ulpCallbacks echoUlp;
-    SCTP_InstanceParameters instanceParameters;
-    SCTP_LibraryParameters params;
+    SCTP_InstanceParameters instanceParameters;/*实例参数*/
+    SCTP_LibraryParameters params;/*控制参数*/
     unsigned int index;
 
     /* initialize ULP data */
@@ -610,7 +610,7 @@ int main(int argc, char **argv)
     SCTP_initLibrary();
     SCTP_getLibraryParameters(&params);
     params.sendOotbAborts = sendOOTBAborts;
-    /* params.checksumAlgorithm = SCTP_CHECKSUM_ALGORITHM_ADLER32; */
+    /* params.checksumAlgorithm = SCTP_CHECKSUM_ALGORITHM_ADLER32; 使用CRC校验*/
     params.checksumAlgorithm = SCTP_CHECKSUM_ALGORITHM_CRC32C;
     SCTP_setLibraryParameters(&params);
 
@@ -623,11 +623,12 @@ int main(int argc, char **argv)
 
     SCTP_getAssocDefaults((unsigned short)sctpInstance, &instanceParameters);
     instanceParameters.maxSendQueue = 0;
-    instanceParameters.ipTos=tosByte;
+    instanceParameters.ipTos=tosByte;/*IP type of service field to IPTOS_LOWDELAY*/
     SCTP_setAssocDefaults((unsigned short)sctpInstance, &instanceParameters);
 
     if (startAssociation) {
         SCTP_associate((unsigned short)sctpInstance, MAXIMUM_NUMBER_OF_OUT_STREAMS, destinationAddress, remotePort, &ulpData[0]);
+        printf("startAssociation\n");
     }
 
     if (doMeasurements) {

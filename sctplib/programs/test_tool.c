@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
            params.sendOotbAborts = 0;
         }
     }
-    SCTP_setLibraryParameters(&params);
+    SCTP_setLibraryParameters(&params);/*设置控制参数*/
 
     /* check script for errors */
     if ((numOfErrors = sctptest_start(argv[1], CHECK_SCRIPT)) != 0) {
@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
     }
 
     /* run script */
-    sctptest_start(argv[1], RUN_SCRIPT);
+    sctptest_start(argv[1], RUN_SCRIPT);/*设置实例参数、实例的回调函数*/
 
     fprintf(stderr, "\nReached end of script file. Press RETURN to exit.\n");
     sctp_registerUserCallback(fileno(stdin), &exitCallback, NULL, POLLPRI|POLLIN);

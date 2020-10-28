@@ -294,6 +294,8 @@ struct SCTP_Library_Parameters {
      * the two interfering with each other (also for tests on localhost)
      * By default, this variable is set to TRUE (==1)
      * Allowed values are 0 (==FALSE) or 1, else function will fail !!
+     * 控制是否一个实例是否发送OTB SCTP packets的ABORT chunks ，或者是否默默丢弃
+     * 在后一种情况，将可以在一台机器上运行两台实例。
      */
     int sendOotbAborts;
     /**
@@ -303,8 +305,10 @@ struct SCTP_Library_Parameters {
      * - SCTP_CHECKSUM_ALGORITHM_ADLER32  (0x2)
      */
     int checksumAlgorithm;
-    /*
+    /**
      * Allowed values are 0 (==FALSE) or 1 (== TRUE)
+     * PRSCTP（Partial Reliability SCTP）标准对scllP进行了扩展，使 
+     * PRSCTP可以同时为上层协议提供可靠和非可靠的传输服务
      */
     int supportPRSCTP;
     /*
