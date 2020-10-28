@@ -1,6 +1,6 @@
-initialize: ip=127.0.0.1, port=20001, instreams=1, outstreams=1;
+initialize: ip=10.10.0.70, port=20001, instreams=1, outstreams=1;
 
 set_ack_delay: delay=10;
 
-associate: ip=127.0.0.1, port=10001, outstreams=1;
+associate: ip=10.10.0.63, port=10001, outstreams=1;
 
