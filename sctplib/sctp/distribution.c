@@ -75,8 +75,8 @@
 
 /*------------------------ Default Definitions --------------------------------------------------*/
 static int      myRWND                      = 0x7FFF;
-static union    sockunion *myAddressList    = NULL;
-static unsigned int myNumberOfAddresses     = 0;
+static union    sockunion *myAddressList    = NULL;/*地址数量*/
+static unsigned int myNumberOfAddresses     = 0; /*地址数量*/
 static gboolean sendAbortForOOTB            = TRUE;
 static int      checksumAlgorithm           = SCTP_CHECKSUM_ALGORITHM_CRC32C;
 static gboolean librarySupportsPRSCTP         = TRUE;
@@ -202,9 +202,6 @@ static gboolean sctpLibraryInitialized = FALSE;
 /*
     Keyed list of SCTP-instances with the instanceName as key
 */
-/**
- * Keyed list of associations with the association-ID as key
- */
 static GList* AssociationList = NULL;
 
 /**
@@ -1516,6 +1513,7 @@ int mdi_updateMyAddressList(void)
     sfd = adl_get_sctpv4_socket();
     free(myAddressList);
 
+    /* 手机主机本地地址信息 */
     if (adl_gatherLocalAddresses(&myAddressList, (int *)&myNumberOfAddresses,sfd,TRUE,&maxMTU,flag_Default) == FALSE) {
         return SCTP_SPECIFIC_FUNCTION_ERROR;
     }
@@ -1682,7 +1680,7 @@ sctp_registerInstance(unsigned short port,
     }
 
     if(port == 0) {
-        port = seizePort();/* free port*/
+        port = seizePort();/* 抢占port*/
     }
     else {
         port = allocatePort(port);
@@ -1695,7 +1693,7 @@ sctp_registerInstance(unsigned short port,
         return SCTP_WRONG_ADDRESS;
     }
 
-
+    /* 查看地址类型ipv4、ipv6 or err*/
     for (i=0; i< noOfLocalAddresses; i++) {
         if (adl_str2sockunion((localAddressList[i]), &su) < 0) {
             error_logi(ERROR_MAJOR, "Address Error in sctp_registerInstance(%s)", (localAddressList[i]));
@@ -1719,7 +1717,7 @@ sctp_registerInstance(unsigned short port,
     event_logi(VERBOSE, "sctp_registerInstance : with_ipv6: %s ",(with_ipv6==TRUE)?"TRUE":"FALSE" );
 #endif
 
-    if ((with_ipv4 != TRUE)
+    if ((with_ipv4 != TRUE)/*既不是ipv4也不是ipv6，即出错*/
 #ifdef HAVE_IPV6
             && (with_ipv6 != TRUE)
 #endif

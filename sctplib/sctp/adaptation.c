@@ -423,7 +423,7 @@ static unsigned int current_tid = 0;
 
 
 static struct extendedpollfd poll_fds[NUM_FDS];
-static int num_of_fds = 0;
+static int num_of_fds = 0; /*套接字的数量*/
 
 static int sctp_sfd = -1;       /* socket fd for standard SCTP port....      */
 
@@ -439,6 +439,10 @@ static struct event_cb *event_callbacks[NUM_FDS];
 /**
  *  converts address-string (hex for ipv6, dotted decimal for ipv4
  *  to a sockunion structure
+ *  转换地址字符串为sockunion结构
+ *  完成ip版本的选择
+ *  @param str ip addr in string
+ *  @param su a 'struct sockaddr' or 'struct sockaddr_in'
  *  @return 0 for success, else -1.
  */
 int adl_str2sockunion(guchar * str, union sockunion *su)
@@ -447,6 +451,7 @@ int adl_str2sockunion(guchar * str, union sockunion *su)
 
     memset((void*)su, 0, sizeof(union sockunion));
 
+/*查看地址类型ipv4 、ipv6 or err*/
 #ifndef WIN32
    ret = inet_aton((const char *)str, &su->sin.sin_addr);
 #else
@@ -456,7 +461,7 @@ int adl_str2sockunion(guchar * str, union sockunion *su)
       ret=1;
    }
 #endif
-    if (ret > 0) {              /* Valid IPv4 address format. */
+    if (ret > 0) {              /* Valid IPv4 address format. 使用ipv4协议*/
         su->sin.sin_family = AF_INET;
 #ifdef HAVE_SIN_LEN
         su->sin.sin_len = sizeof(struct sockaddr_in);
@@ -465,8 +470,8 @@ int adl_str2sockunion(guchar * str, union sockunion *su)
     }
 #ifdef HAVE_IPV6
     ret = inet_pton(AF_INET6, (const char *)str, &su->sin6.sin6_addr);
-    if (ret > 0) {              /* Valid IPv6 address format. */
-        su->sin6.sin6_family = AF_INET6;
+    if (ret > 0) {              /* Valid IPv6 address format. 使用ipv6协议*/
+        su->sin6.sin6_family = AF_INET6; 
 #ifdef SIN6_LEN
         su->sin6.sin6_len = sizeof(struct sockaddr_in6);
 #endif                          /* SIN6_LEN */
@@ -1372,7 +1377,7 @@ void dispatch_event(int num_of_events)
 /**
  * function calls the respective callback funtion, that is to be executed as a timer
  * event, passing it two arguments
- * 函数调用各自的回调函数，该函数将作为计时器*事件执行，并向其传递两个参数
+ * 函数调用各自的回调函数，该函数将作为计时器事件执行，并向其传递两个参数
  */
 void dispatch_timer(void)
 {
@@ -1392,7 +1397,7 @@ void dispatch_timer(void)
         tid = event->timer_id;
         current_tid = tid;
 
-        (*(event->action)) (tid, event->arg1, event->arg2);
+        (*(event->action)) (tid, event->arg1, event->arg2);/*执行该计时器的回调函数*/
         current_tid = 0;
 
         result = remove_timer(event);
@@ -2015,6 +2020,8 @@ adl_register_socket_cb(gint sfd, sctp_socketCallback scf)
 /**
  *      This function adds a callback that is to be called some time from now. It realizes
  *      the timer (in an ordered list).
+ *      此函数添加了一个从现在开始将被调用的回调。它实现（在有序列表中的)
+ *      计时器。
  *      @param      milliseconds  action is to be started in milliseconds ms from now
  *      @param      action        pointer to a function to be executed, when timer goes off
  *      @return     returns an id value, that can be used to cancel a timer

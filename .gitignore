@@ -79,3 +79,4 @@ stamp-h1
 *.lo
 *.Plo
 sctplib/programs/tags
+.vscode

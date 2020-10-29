@@ -41,6 +41,8 @@
  *          andreas.jungmaier@web.de
  */
 
+
+
 #ifndef AUXILIARY_H
 #define AUXILIARY_H
 

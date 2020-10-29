@@ -312,8 +312,8 @@ void free_list_element(gpointer list_element, gpointer user_data);
 #define SOCKUNION_DEFINE    1
 union sockunion
 {
-    struct sockaddr sa;
-    struct sockaddr_in sin;
+    struct sockaddr sa;/* 地址协议簇和地址（ip地址+端口不分开） */
+    struct sockaddr_in sin /* 同struct sockaddr但是IP地址和端口分开*/;
 #ifdef HAVE_IPV6
     struct sockaddr_in6 sin6;
 #endif                          /* HAVE_IPV6 */
