@@ -63,7 +63,7 @@ typedef struct rxc_buffer_struct
     GList *frag_list;
     /** */
     GList *dup_list;
-    /** cumulative TSN acked */
+    /** cumulative累计的 TSN acked */
     unsigned int ctsna;
     /** store lowest tsn value for dups (!) */
     unsigned int lowest;
@@ -76,7 +76,7 @@ typedef struct rxc_buffer_struct
     boolean timer_running;
     /** indicates whether a chunk was recvd that is truly new */
     boolean new_chunk_received;
-    /** timer for delayed sacks */
+    /** timer for delayed sacks延迟返回计时器 */
     TimerID sack_timer;
     int datagrams_received;
      /* either 1 (= sack each data chunk) or 2 (=sack every second chunk)*/
@@ -442,7 +442,7 @@ boolean rxc_update_fragments(rxc_buffer * rbuf, unsigned int ch_tsn)
  */
 int rxc_data_chunk_rx(SCTP_data_chunk * se_chk, unsigned int ad_idx)
 {
-    rxc_buffer *rxc;
+    rxc_buffer *rxc;/*创建ACKs的必要数据*/
     unsigned int chunk_tsn;
     unsigned int chunk_len;
     unsigned int assoc_state;
@@ -458,11 +458,11 @@ int rxc_data_chunk_rx(SCTP_data_chunk * se_chk, unsigned int ad_idx)
     }
 
 
-    /* resetting it */
+    /* resetting it 默认不是的chunk*/
     rxc->new_chunk_received = FALSE;
     rxc->last_address = ad_idx;
 
-    bytesQueued = se_getQueuedBytes();
+    bytesQueued = se_getQueuedBytes();/*排队的字节数*/
     if (bytesQueued < 0) bytesQueued = 0;
     if ((unsigned int)bytesQueued > rxc->my_rwnd) {
         current_rwnd = 0;
@@ -497,15 +497,17 @@ int rxc_data_chunk_rx(SCTP_data_chunk * se_chk, unsigned int ad_idx)
         delay. Normally this will occur when the original SACK was lost, and
         the peers RTO has expired. The duplicate TSN number(s) SHOULD be
         reported in the SACK as duplicate.
+        接受到重复的DATA chunks并且没有新的DATA chunks，接收端必须马上回复一个ACK
      */
     event_logii(VERBOSE, "rxc_data_chunk_rx : chunk_tsn==%u, chunk_len=%u", chunk_tsn, chunk_len);
     if (rxc_update_lowest(rxc, chunk_tsn) == TRUE) {
-        /* tsn is even lower than the lowest one received so far */
-        rxc_update_duplicates(rxc, chunk_tsn);
+        /* tsn is even lower than the lowest one received so far 比最低的还低，即收到更老的chunk*/
+        rxc_update_duplicates(rxc, chunk_tsn);/*更新重复列表*/
     } else if (rxc_update_highest(rxc, chunk_tsn) == TRUE) {
+        /* 新chunk */
         rxc->new_chunk_received = TRUE;
         result = rxc_update_fragments(rxc, chunk_tsn);
-    } else if (rxc_chunk_is_duplicate(rxc, chunk_tsn) == TRUE)
+    } else if (rxc_chunk_is_duplicate(rxc, chunk_tsn) == TRUE)/*重复*/
         rxc_update_duplicates(rxc, chunk_tsn);
     else
         result = rxc_update_fragments(rxc, chunk_tsn);

@@ -345,7 +345,7 @@ gboolean rbu_scanDatagramForError(guchar * datagram, guint len, gushort error_ca
 
 
 /**
- * Disassembles chunks from a received datagram
+ * Disassembles（分解） chunks from a received datagram
  *
  * FIXME : data chunks may only be parsed after control chunks.....
  *
@@ -360,8 +360,8 @@ gboolean rbu_scanDatagramForError(guchar * datagram, guint len, gushort error_ca
  */
 gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
 {
-    /* sctp common header header has been verified */
-    /* tag (if association is established) and CRC is okay */
+    /* sctp common header header has been verified 公共头已验证*/
+    /* tag (if association is established) and CRC is okay 关联处于已建立状态*/
     /* get first chunk-id and length, pass pointers & len on to relevant module :
        - CHUNK_INIT, CHUNK_INIT_ACK,CHUNK_ABORT, CHUNK_SHUTDOWN,CHUNK_SHUTDOWN_ACK
        CHUNK_COOKIE_ECHO,CHUNK_COOKIE_ACK go to SCTP_CONTROL (change of association state)

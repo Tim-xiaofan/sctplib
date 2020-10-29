@@ -1256,6 +1256,7 @@ int adl_get_message(int sfd, void *dest, int maxlen, union sockunion *from, sock
 /**
  * this function is responsible for calling the callback functions belonging
  * to all of the file descriptors that have indicated an event !
+ * 这个函数负责调用属于已经指明事件的所有文件描述符的回调函数
  * TODO : check handling of POLLERR situation
  * @param num_of_events  number of events indicated by poll()
  */
@@ -1276,13 +1277,16 @@ void dispatch_event(int num_of_events)
 #endif
     int hlen=0;
     ENTER_EVENT_DISPATCHER;
-    for (i = 0; i < num_of_fds; i++) {
+    for (i = 0; i < num_of_fds; i++) { /*轮询描述符集*/
 
     if (!poll_fds[i].revents)
         continue;
 
         if (poll_fds[i].revents & POLLERR) {
-            /* We must have specified this callback funtion for treating/logging the error */
+            /**
+             * We must have specified this callback funtion for treating/logging the error
+             * 处理或记录错误 
+             * */
             if (event_callbacks[i]->eventcb_type == EVENTCB_TYPE_USER) {
                 event_logi(VERBOSE, "Poll Error Condition on user fd %d", poll_fds[i].fd);
                 ((sctp_userCallback)*(event_callbacks[i]->action)) (poll_fds[i].fd, poll_fds[i].revents, &poll_fds[i].events, event_callbacks[i]->userData);
@@ -1293,6 +1297,7 @@ void dispatch_event(int num_of_events)
         }
 
         if ((poll_fds[i].revents & POLLPRI) || (poll_fds[i].revents & POLLIN) || (poll_fds[i].revents & POLLOUT)) {
+            /*可读或可写*/
             if (event_callbacks[i]->eventcb_type == EVENTCB_TYPE_USER) {
                     event_logi(VERBOSE, "Activity on user fd %d - Activating USER callback", poll_fds[i].fd);
                     ((sctp_userCallback)*(event_callbacks[i]->action)) (poll_fds[i].fd, poll_fds[i].revents, &poll_fds[i].events, event_callbacks[i]->userData);
@@ -1318,7 +1323,7 @@ void dispatch_event(int num_of_events)
                 }
                 ((sctp_socketCallback)*(event_callbacks[i]->action)) (poll_fds[i].fd, rbuf, length, src_address, portnum);
 
-            } else if (event_callbacks[i]->eventcb_type == EVENTCB_TYPE_SCTP) {
+            } else if (event_callbacks[i]->eventcb_type == EVENTCB_TYPE_SCTP) {/*SCTP*/
                 length = adl_receive_message(poll_fds[i].fd, rbuf, MAX_MTU_SIZE, &src, &dest);
 
                 if(length < 0) break;
@@ -1523,7 +1528,7 @@ int adl_extendedEventLoop(void (*lock)(void* data), void (*unlock)(void* data), 
     case 0:/* timeout */
         dispatch_timer();
         break;
-    default:
+    default: /* 有事件发生 */
         u_res = (unsigned int) result;
         event_logi(INTERNAL_EVENT_0,
                    "############### %d Read Event(s) occurred -> dispatch_event() #############",

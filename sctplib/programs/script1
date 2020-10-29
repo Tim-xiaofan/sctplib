@@ -7,7 +7,7 @@ set_payload_body: length=20, contents="Hello Sctplib";
 ##Wait for an association(连接)
 wait_for_assoc;
 
-LOOP: times = 3;
+LOOP: times = 100;
     send_chunks: num=2000, stream=0, delay=0;
     pause: time=5000;
 ENDLOOP;

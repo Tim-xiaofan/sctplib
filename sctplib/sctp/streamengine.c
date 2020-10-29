@@ -89,6 +89,7 @@ typedef struct
 
 /*
  * this stores all the data need to be delivered to the user
+ * 存储交付给用户的所有数据
  */
 typedef struct _delivery_data
 {
@@ -115,7 +116,7 @@ typedef struct _delivery_pdu
     guint32  read_chunk;
     guint32  chunk_position;
     guint32  total_length;
-    /* one chunk pointer or an array of these */
+    /* one chunk pointer or an array of these 存储chunk的地方*/
     delivery_data** ddata;
 }delivery_pdu;
 
@@ -485,7 +486,7 @@ short se_ulpreceivefrom(unsigned char *buffer, unsigned int *byteCount,
   guint32 r_pos, r_chunk, chunk_pos, oldQueueLen = 0;
 
 
-  StreamEngine* se = (StreamEngine *) mdi_readStreamEngine ();
+  StreamEngine* se = (StreamEngine *) mdi_readStreamEngine ();/*mdi介质相关接口*/
 
 
   if (se == NULL)
@@ -507,7 +508,7 @@ short se_ulpreceivefrom(unsigned char *buffer, unsigned int *byteCount,
   else
     {
       event_logii (EXTERNAL_EVENT, "SE_ULPRECEIVE (sid: %u, numBytes: %u) CALLED",streamId,*byteCount);
-
+      /*对应接受流无数据*/
       if (se->RecvStreams[streamId].pduList == NULL)
         {
             event_log (EXTERNAL_EVENT, "NO DATA AVAILABLE");
@@ -517,7 +518,7 @@ short se_ulpreceivefrom(unsigned char *buffer, unsigned int *byteCount,
         {
             oldQueueLen = se->queuedBytes;
             copiedBytes = 0;
-
+            /*receive a chunk glib提供*/
             d_pdu = (delivery_pdu*)g_list_nth_data (se->RecvStreams[streamId].pduList, 0);
 
             r_pos       = d_pdu->read_position;
@@ -629,6 +630,7 @@ int se_doNotifications(void)
 
  /*
  * This function is called from Receive Control to forward received chunks to Stream Engine.
+ * Receive Control调用此函数将chunks传递给Stream Engine
  * returns an error chunk to the peer, when the maximum stream id is exceeded !
  */
 int se_recvDataChunk (SCTP_data_chunk * dataChunk, unsigned int byteCount, unsigned int address_index)

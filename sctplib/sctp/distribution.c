@@ -91,10 +91,12 @@ static gboolean supportADDIP                = FALSE;
 typedef struct SCTPINSTANCE
 {
     /*@{ */
-    /** The name of this SCTP-instance, used as key. */
+    /** The name of this SCTP-instance, used as key. 
+     * 名字为键值*/
     unsigned short sctpInstanceName;
     /** The local port of this instance, or zero for don't cares.
-        Once assigned this should not be changed !   */
+        Once assigned this should not be changed !   
+        本地端口，如果不关心设置为0*/
     unsigned short localPort;
     guint16 noOfLocalAddresses;
     union sockunion *localAddressList;
@@ -224,6 +226,10 @@ static unsigned int ipv4_users = 0;
  * contain the addressed association.
  * Read functions for 'global data' read data from the association pointed to by this pointer.
  * This pointer must be reset to null after the event  has been handled.
+ * 每当外部事件（ULP调用，套接字事件或计时器事件）时，此变量必须
+ * 包含已经处理的关联。
+ * “全局数据”的读取功能从此指针指向的关联中读取数据。
+ * 处理事件后，必须将此指针重置为null。
  */
 static Association *currentAssociation;
 static Association tmpAssoc;
@@ -481,10 +487,10 @@ Association *retrieveAssociation(unsigned int assocID)
 }
 
 /**
- * retrieveAssociationForced retrieves an association from the list using
- * assoc id as key. Returns also associations marked "deleted" !
- * @param assocID  association ID
- * @return  pointer to the retrieved association, or NULL
+ *  retrieveAssociationForced retrieves an association from the list using
+ *  assoc id as key. Returns also associations marked "deleted" !
+ *  @param assocID  association ID
+ *  @return  pointer to the retrieved association, or NULL
  */
 Association *retrieveAssociationForced(unsigned int assocID)
 {
@@ -497,6 +503,7 @@ Association *retrieveAssociationForced(unsigned int assocID)
     tmpAssoc.assocId = assocID;
     assocFindP = &tmpAssoc;
     assoc = NULL;
+    /*关联列表按ID寻找指定关联*/
     result = g_list_find_custom(AssociationList, assocFindP, &compareAssociationIDs);
     if (result != NULL) {
        assoc = (Association *)result->data;
@@ -824,6 +831,7 @@ mdi_dummy_callback(gint socket_fd,
  *  This function also performs OOTB handling, tag verification etc.
  *  (see also RFC 4960, section 8.5.1.B)  and sends data to the bundling module of
  *  the right association
+ *  将数据包发送给正确的关联的bundling module
  *
  *  @param socket_fd          the socket file discriptor
  *  @param buffer             pointer to arrived datagram
@@ -1513,7 +1521,7 @@ int mdi_updateMyAddressList(void)
     sfd = adl_get_sctpv4_socket();
     free(myAddressList);
 
-    /* 手机主机本地地址信息 */
+    /* 收集主机本地地址信息 */
     if (adl_gatherLocalAddresses(&myAddressList, (int *)&myNumberOfAddresses,sfd,TRUE,&maxMTU,flag_Default) == FALSE) {
         return SCTP_SPECIFIC_FUNCTION_ERROR;
     }
@@ -1729,7 +1737,7 @@ sctp_registerInstance(unsigned short port,
             LEAVE_LIBRARY("sctp_registerInstance");
             return SCTP_PARAMETER_PROBLEM;
     }
-
+     /* 收集主机本地地址信息 */
     i = mdi_updateMyAddressList();
     if (i != SCTP_SUCCESS) {
             error_log(ERROR_MAJOR, "Could not update my local addresses...");
@@ -1749,7 +1757,7 @@ sctp_registerInstance(unsigned short port,
         LEAVE_LIBRARY("sctp_registerInstance");
         return SCTP_OUT_OF_RESOURCES;
     }
-
+    /* 实例的各项参数 */
     sctpInstance->localPort = port;
     sctpInstance->noOfInStreams = noOfInStreams;
     sctpInstance->noOfOutStreams = noOfOutStreams;
@@ -1760,7 +1768,7 @@ sctp_registerInstance(unsigned short port,
     sctpInstance->supportsPRSCTP = librarySupportsPRSCTP;
     sctpInstance->supportsADDIP = supportADDIP;
 
-
+    /*地址协议簇*/
     if (noOfLocalAddresses == 1) {
         adl_str2sockunion((localAddressList[0]), &su);
         switch(sockunion_family(&su)) {
@@ -1795,6 +1803,7 @@ sctp_registerInstance(unsigned short port,
         }
     }
 
+    /*支持的地址类型*/
     sctpInstance->supportedAddressTypes = 0;
     if (with_ipv4) sctpInstance->supportedAddressTypes |= SUPPORT_ADDRESS_TYPE_IPV4;
 #ifdef HAVE_IPV6
@@ -1875,7 +1884,7 @@ sctp_registerInstance(unsigned short port,
         sctpInstance->uses_IPv4 = FALSE;
     }
 
-
+    /*实例名（键值）*/
     sctpInstance->sctpInstanceName = mdi_getUnusedInstanceName();
     if(sctpInstance->sctpInstanceName == 0) {
         releasePort(port);
@@ -1885,6 +1894,7 @@ sctp_registerInstance(unsigned short port,
         return SCTP_OUT_OF_RESOURCES;
     }
 
+    /*上层回调函数*/
     sctpInstance->ULPcallbackFunctions = ULPcallbackFunctions;
 
     sctpInstance->default_rtoInitial = RTO_INITIAL;
@@ -2379,16 +2389,18 @@ short sctp_setPrimary(unsigned int associationID, short path_id)
 }                               /* end: sctp_setPrimary */
 
 /**
- * sctp_receive is called in response to the dataArriveNotification to
- * get the received data.
- * The stream engine must copy the chunk data from a received  SCTP datagram to
- * a new byte string, because the SCTP datagram is overwritten when the next datagram
- * is received and the lifetime of a chunk in the streamengine might outlast the
+ *  sctp_receive is called in response to the dataArriveNotification to
+ *  get the received data.
+ *  响应dataArriveNotification来接受数据
+ *  The stream engine must copy the chunk data from a received  SCTP datagram to
+ *  a new byte string, because the SCTP datagram is overwritten when the next datagram
+ *  is received and the lifetime of a chunk in the streamengine might outlast the
  *  the reception of several SCTP datagrams.
  *  For this reasons and to avoid repeated copying of byte strings, a pointer to
  *  the byte string of chunkdata allocated by the streamengine is returned.
  *  According to the standard, the chunkdata should be copied to to a buffer provided
  *  by the ULP.
+ *  根据标准chunkdata应该被复制进入ULP提供的缓存中
  *  @param   associationID  ID of association.
  *  @param   streamID       the stream on which the data chunk is received.
  *  @param   buffer         pointer to where payload data of arrived chunk will be copied
@@ -2404,7 +2416,7 @@ int sctp_receive(unsigned int associationID,
                  unsigned int flags)
 {
     unsigned int addressIndex;
-    return (sctp_receivefrom(associationID,streamID, buffer, length,
+    return (sctp_receivefrom(associationID, streamID, buffer, length,
                                 streamSN, tsn, &addressIndex, flags));
 
 }
@@ -2413,6 +2425,7 @@ int sctp_receive(unsigned int associationID,
 /**
  * sctp_receivefrom does the same thing as sctp_receive(), and additionally returns the
  * addressIndex, indicating where the chunks was received from.
+ * 另外返回地址，告诉ULPchunks从何处接受
  *  @param   associationID  ID of association.
  *  @param   streamID       the stream on which the data chunk is received.
  *  @param   buffer         pointer to where payload data of arrived chunk will be copied
@@ -2450,7 +2463,7 @@ int sctp_receivefrom(unsigned int associationID,
     if (currentAssociation != NULL) {
         sctpInstance = currentAssociation->sctpInstance;
 
-        /* retrieve data from streamengine instance */
+        /* retrieve data from streamengine instance 从流引擎取数据*/
         result = se_ulpreceivefrom(buffer, length, streamID, streamSN, tsn, addressIndex, flags);
     } else {
         error_log(ERROR_MAJOR, "sctp_receive: addressed association does not exist");
@@ -3965,6 +3978,7 @@ void *mdi_readReliableTransfer(void)
 
 /**
  * function to return a pointer to the receiver module of this association
+ * 返回关联的接收模块
  * @return pointer to the RX-control data structure, null in case of error.
  */
 void *mdi_readRX_control(void)
