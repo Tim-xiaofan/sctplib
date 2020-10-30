@@ -9,7 +9,7 @@ wait_for_assoc;
 
 LOOP: times = 100;
     send_chunks: num=2000, stream=0, delay=0;
-    pause: time=5000;
+    pause: time=5;
 ENDLOOP;
 
 shutdown;
