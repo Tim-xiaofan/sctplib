@@ -108,6 +108,7 @@ delivery_data;
 /*
  * this struct stores several chunks that can be delivered to
  * the user as one message.
+ * 存储了几个可以被作为消息传递给用户的chunks
  */
 typedef struct _delivery_pdu
 {
@@ -630,7 +631,7 @@ int se_doNotifications(void)
 
  /*
  * This function is called from Receive Control to forward received chunks to Stream Engine.
- * Receive Control调用此函数将chunks传递给Stream Engine
+ * (Receive Control调用此函数将chunks传递给Stream Engine)
  * returns an error chunk to the peer, when the maximum stream id is exceeded !
  */
 int se_recvDataChunk (SCTP_data_chunk * dataChunk, unsigned int byteCount, unsigned int address_index)

@@ -1257,6 +1257,7 @@ int adl_get_message(int sfd, void *dest, int maxlen, union sockunion *from, sock
  * this function is responsible for calling the callback functions belonging
  * to all of the file descriptors that have indicated an event !
  * 这个函数负责调用属于已经指明事件的所有文件描述符的回调函数
+ * 即有事件发生，才处理应的fd的回调函数
  * TODO : check handling of POLLERR situation
  * @param num_of_events  number of events indicated by poll()
  */
@@ -1323,7 +1324,8 @@ void dispatch_event(int num_of_events)
                 }
                 ((sctp_socketCallback)*(event_callbacks[i]->action)) (poll_fds[i].fd, rbuf, length, src_address, portnum);
 
-            } else if (event_callbacks[i]->eventcb_type == EVENTCB_TYPE_SCTP) {/*SCTP*/
+            } else if (event_callbacks[i]->eventcb_type == EVENTCB_TYPE_SCTP) {
+                /*有SCTP数据报*/
                 length = adl_receive_message(poll_fds[i].fd, rbuf, MAX_MTU_SIZE, &src, &dest);
 
                 if(length < 0) break;
@@ -1638,7 +1640,7 @@ int adl_eventLoop()
       return 1;
 #else //linux 执行以下代码
 
-   return(adl_extendedEventLoop(NULL, NULL, NULL));
+   return((NULL, NULL, NULL));
 #endif
 }
 
