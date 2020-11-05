@@ -95,6 +95,7 @@ bundling_instance;
 /**
  *  one static variable for a buffer that is used, if no bundling instance has been
  *  allocated and initialized yet
+ *  如果没有bundling实例，就使用它
  */
 static bundling_instance *global_buffer;
 
@@ -303,6 +304,7 @@ gboolean bu_userDataOutbound(void)
 /**
  * this function used for putting data chunks into the buffer
  * Used only in the flow control module
+ * 将data chunk放入flow control module专用buffer
  *
  * @param chunk pointer to chunk, that is to be put in the bundling buffer
  * @return TODO : error value, 0 on success
@@ -358,11 +360,12 @@ gint bu_put_Data_Chunk(SCTP_simple_chunk * chunk,unsigned int * dest_index)
 }
 
 /**
- * Trigger sending of all chunks previously entered with put_Chunk functions
+ * Trigger sending of all chunks previously entered with put_Chunk functions 
  *  Chunks sent are deleted afterwards.
  *
  * FIXME : special treatment for GLOBAL BUFFER, as this is not associated with
  *         any association.
+ *         与关联无关
  *
  *
  *  @return                 Errorcode (0 for good case: length bytes sent; 1 or -1 for error)
@@ -379,7 +382,7 @@ gint bu_sendAllChunks(guint * ad_idx)
 
     event_log(INTERNAL_EVENT_0, "bu_sendAllChunks() is being executed...");
 
-    if (!bu_ptr) {
+    if (!bu_ptr) {/*没有bunding*/
         event_log(VERBOSE, "Sending data from global bundling buffer ");
         bu_ptr = global_buffer;
     }

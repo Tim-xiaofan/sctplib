@@ -399,7 +399,7 @@ int
 SCTP_eventLoop(void)
 {
     int result;
-    
+    //fprintf(stderr, "enter sctp_eventLoop.\n");
     if ((result = sctp_eventLoop()) < 0) {
         if (result == -1) {
             fprintf(stderr, "sctp_eventLoop: an error occured.\n");

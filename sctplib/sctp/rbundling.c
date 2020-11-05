@@ -371,7 +371,7 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
        - CHUNK_DATA goes to RX_CONTROL
      */
     guchar *current_position;
-    gushort processed_len = 0, chunk_len;
+    gushort processed_len = 0, chunk_len;/*已处理长度*/
     gushort pad_bytes;
     SCTP_simple_chunk *chunk;
     gboolean data_chunk_received = FALSE;
@@ -447,11 +447,11 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
             break;
         case CHUNK_COOKIE_ECHO:
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ECHO chunk");
-            sctlr_cookie_echo((SCTP_cookie_echo *) chunk);
+            sctlr_cookie_echo((SCTP_cookie_echo *) chunk);/*根据建立偶联*/
             break;
         case CHUNK_COOKIE_ACK:
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ACK chunk");
-            sctlr_cookieAck((SCTP_simple_chunk *) chunk);
+            sctlr_cookieAck((SCTP_simple_chunk *) chunk);/*偶联状态设置为established*/
             break;
      /* case CHUNK_ECNE:
         case CHUNK_CWR:

@@ -316,7 +316,7 @@ static void sci_timer_expired(TimerID timerID, void *associationIDvoid, void *un
 
 /**
  * This function is called to initiate the setup an association.
- *
+ * 初始化并建立一个关联
  * The local tag and the initial TSN are randomly generated.
  * Together with the parameters of the function, they are used to create the init-message.
  * This data are also stored in a newly created association-record.
@@ -1631,6 +1631,7 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
   sctlr_cookieAck is called by bundling when a cookieAck chunk was received from  the peer.
   The only purpose is to inform the active side that peer has received the cookie chunk.
   The association is in established state after this function is called.
+  调用后后关联处于建立状态
   Communication up is signalled to the upper layer in this case.
   @param cookieAck pointer to the received cookie ack chunk
 */

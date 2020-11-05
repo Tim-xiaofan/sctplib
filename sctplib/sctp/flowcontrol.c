@@ -87,7 +87,7 @@ typedef struct flowcontrol_struct
     cparm *cparams;
     /** */
     unsigned int current_tsn;
-    /** */
+    /** 放置chunks的链表*/
     GList *chunk_list;
     /** */
     unsigned int list_length;
@@ -653,6 +653,8 @@ gboolean fc_send_okay(fc_data* fc,
  *  function that checks whether we may transmit data that is currently in the send queue.
  *  Any time that some data chunk is added to the send queue, we must check, whether we can send
  *  the chunk, or must wait until cwnd opens up.
+ *  检查是否可以传输当前发送队列中的数据
+ *  每当有数据入队发送队列，我们必须检查是否能够发送或者等待拥塞窗口打开
  *  @param fc_instance  pointer to the flowcontrol instance used here
  *  @return  0 for successful send event, -1 for error, 1 if nothing was sent
  */
@@ -666,7 +668,7 @@ int fc_check_for_txmit(void *fc_instance, unsigned int oldListLen, gboolean doIn
     gboolean data_is_retransmitted = FALSE;
     gboolean lowest_tsn_is_retransmitted = FALSE;
     gboolean data_is_submitted = FALSE;
-    peer_rwnd = rtx_read_remote_receiver_window();
+    peer_rwnd = rtx_read_remote_receiver_window();/*接收窗口*/
 
     event_logi(INTERNAL_EVENT_0, "Entering fc_check_for_txmit(rwnd=%u)... ", peer_rwnd);
 
@@ -929,6 +931,7 @@ void fc_check_t3(unsigned int ad_idx, boolean all_acked, boolean new_acked)
  * module. After function returns, we should be able to  delete the pointer
  * to the data (i.e. some lower module must have copied the data...e.g. the
  * Flowcontrol, ReliableTransfer, or Bundling
+ * 由stream engine调用将data chunk入队到流控制模块。函数返回后，要删除相应的数据
  * @param  chunk    pointer to the data chunk to be sent
  * @param destAddressIndex index to address to send data structure to...
  * @param  lifetime NULL if unused, else pointer to a value of msecs,
@@ -987,7 +990,7 @@ int fc_send_data_chunk(chunk_data * chunkd,
     else chunkd->initial_destination = -1;
 
     if (lifetime == 0xFFFFFFFF) {
-        timerclear(&(chunkd->expiry_time));
+        timerclear(&(chunkd->expiry_time));/*设置超时时间*/
     } else if (lifetime == 0) {
         adl_gettime(&(chunkd->expiry_time));
     } else {

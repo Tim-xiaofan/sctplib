@@ -284,6 +284,10 @@ unsigned short mdi_getUnusedInstanceName(void);
 #define CHECK_LIBRARY           if(sctpLibraryInitialized == FALSE) return SCTP_LIBRARY_NOT_INITIALIZED
 #define ZERO_CHECK_LIBRARY      if(sctpLibraryInitialized == FALSE) return 0
 
+/**#ifndef LIBRARY_DEBUG 
+#define LIBRARY_DEBUG 1
+#endif*/
+
 #ifdef LIBRARY_DEBUG
  #define ENTER_LIBRARY(fname)	printf("Entering sctplib  (%s)\n", fname); fflush(stdout);
  #define LEAVE_LIBRARY(fname)	printf("Leaving  sctplib  (%s)\n", fname); fflush(stdout);
@@ -828,6 +832,7 @@ mdi_dummy_callback(gint socket_fd,
 /**
  *  mdi_receiveMessage is the callback function of the SCTP-message distribution.
  *  It is called by the Unix-interface module when a new datagramm is received.
+ *  当接受到新的数据报时，被Unix-interface module调用
  *  This function also performs OOTB handling, tag verification etc.
  *  (see also RFC 4960, section 8.5.1.B)  and sends data to the bundling module of
  *  the right association
@@ -4724,6 +4729,7 @@ unsigned short mdi_clearAssociationData(void)
 /*------------------- Functions to create and delete associations --------------------------------*/
 
 /**
+ *  建立一个偶联
  *  This function allocates memory for a new association.
  *  For the active side of an association, this function is called when ULP calls Associate
  *  For the passive side this function is called when a valid cookie message is received.

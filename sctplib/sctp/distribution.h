@@ -99,7 +99,7 @@ void mdi_receiveMessage(gint socket_fd, unsigned char *buffer,
 
 /*------------------- Functions called by the SCTP bundling --------------------------------------*/
 
-/* Used by bundling to send a SCTP-daatagramm. 
+/* Used by bundling to send a SCTP-datagramm. 
    Before calling send_message at the adaption-layer, this function does:
    - add the SCTP common header to the message
    - convert the SCTP message to a byte string
