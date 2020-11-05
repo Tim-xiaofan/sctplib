@@ -1097,6 +1097,7 @@ int adl_receive_message(int sfd, void *dest, int maxlen, union sockunion *from, 
     if ((dest == NULL) || (from == NULL) || (to == NULL)) return -1;
 
     if (sfd == sctp_sfd) {
+        printf("sfd == sctp_sfd\n");
         len = recv (sfd, dest, maxlen, 0);
 #ifdef LINUX
         iph = (struct iphdr *)dest;

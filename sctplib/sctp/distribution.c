@@ -1458,6 +1458,8 @@ unsigned int sctp_getLibraryVersion(void)
 /**
  * Function that needs to be called in advance to all library calls.
  * It initializes all file descriptors etc. and sets up some variables
+ * 需要在所有库调用之前调用
+ * 它初始化所有的文件描述符
  * @return 0 for success, 1 for adaptation level error, -9 for already called
  * (i.e. the function has already been called), -2 for insufficient rights.
  */
@@ -1483,6 +1485,9 @@ int sctp_initLibrary(void)
 
 
     event_log(EXTERNAL_EVENT, "sctp_initLibrary called");
+    /**
+     * 1.初始化用来监听时间的fds数组
+     * 2.为入境请求绑定本地套接字**/
     result = adl_init_adaptation_layer(&myRWND);
 
     if (result != 0) {
@@ -1873,7 +1878,7 @@ sctp_registerInstance(unsigned short port,
         sctpInstance->uses_IPv6 = FALSE;
     }
 #endif
-    if (with_ipv4 && sctp_socket==0) {
+    if (with_ipv4 && sctp_socket==0) {/*没有分配socket*/
          sctp_socket = adl_get_sctpv4_socket();
          if (!sctp_socket)
             error_log(ERROR_FATAL, "IPv4 socket creation failed");

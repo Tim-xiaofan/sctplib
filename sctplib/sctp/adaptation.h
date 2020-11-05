@@ -86,6 +86,7 @@ gint adl_open_sctp_socket(int af, int* myRwnd);
 
 int adl_setReceiveBufferSize(int sfd, int new_size);
 
+/*获取adpter layer的sctp socket fd*/
 gint adl_get_sctpv4_socket(void);
 #ifdef HAVE_IPV6
 gint adl_get_sctpv6_socket(void);
@@ -106,7 +107,7 @@ int adl_send_message(int sfd, void *buf, int len, union sockunion *dest, unsigne
 
 /**
  * this function initializes the data of this module. It opens raw sockets for
- * capturing SCTP packets, and also opens ICMP sockets, so we can get ICMP events,
+ * capturing（捕获） SCTP packets, and also opens ICMP sockets, so we can get ICMP events,
  * e.g.  for Path-MTU discovery !
  */
 int adl_init_adaptation_layer(int * myRwnd);
