@@ -82,3 +82,4 @@ sctplib/programs/tags
 .vscode
 *.out
 *.sh
+*.cap
