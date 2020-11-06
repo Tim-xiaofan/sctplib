@@ -448,6 +448,10 @@ static struct extendedpollfd poll_fds[NUM_FDS];
 static int num_of_fds = 0; /*套接字的数量*/
 
 static int sctp_sfd = -1; /* socket fd for standard SCTP port....      */
+static struct rte_ring* adl_recv_ring;
+static struct rte_ring* adl_recv_ring1;
+static struct rte_ring* adl_send_ring;
+static struct rte_ring* adl_send_ring1;
 
 #ifdef HAVE_IPV6
 static int sctpv6_sfd = -1;
@@ -729,6 +733,23 @@ gint adl_get_sctpv4_socket(void)
 {
 	/* this is a static variable ! */
 	return sctp_sfd;
+}
+
+/**/
+void adl_get_sctp_rings(struct rte_ring* rr, struct rte_ring* rr1, struct rte_ring* sr, struct rte_ring* sr1)
+{
+	printf("!!!!!!enter adl_get_sctp_rings.\n");
+	if(adl_recv_ring == NULL || adl_recv_ring1 == NULL || adl_send_ring == NULL || adl_send_ring1 == NULL)
+	{
+		printf("adl_get_sctp_rings:ring == NULL\n");
+		exit(-1);
+	}
+	printf("!!!!!(%s, %s, %s, %s)\n", adl_recv_ring->name, adl_recv_ring1->name, adl_send_ring->name, adl_send_ring1->name);
+	memcpy(rr, adl_recv_ring, sizeof(struct rte_ring));
+	memcpy(rr1, adl_recv_ring1, sizeof(struct rte_ring));
+	memcpy(sr, adl_send_ring, sizeof(struct rte_ring));
+	memcpy(sr1, adl_send_ring1, sizeof(struct rte_ring));
+	printf("!!!!!rr(%s, %s, %s, %s)\n", rr->name, rr1->name, sr->name, sr1->name);
 }
 
 #ifdef HAVE_IPV6
@@ -1917,6 +1938,16 @@ int adl_init_adaptation_layer(int *myRwnd, int argc, char *argv[])
 	/*  print_debug_list(INTERNAL_EVENT_0); */
 	sctp_sfd = adl_open_sctp_socket(AF_INET, myRwnd);
 	ret = dpdk_ops(argc, argv);
+	adl_recv_ring = recv_ring;
+	adl_recv_ring1 = recv_ring1;
+	adl_send_ring = send_ring;
+	adl_send_ring1 = send_ring1;
+	printf("(%s, %s, %s, %s)\n", adl_recv_ring->name, adl_recv_ring1->name, adl_send_ring->name, adl_send_ring1->name);
+	if(adl_recv_ring == NULL || adl_recv_ring1 == NULL || adl_send_ring == NULL || adl_send_ring1 == NULL)
+	{
+		printf("adl_init: rings == NULL on creat\n");
+		exit(-1);
+	}
 	/* set a safe default */
 	if (*myRwnd == -1)
 		*myRwnd = 8192;
@@ -1970,7 +2001,6 @@ int adl_init_adaptation_layer(int *myRwnd, int argc, char *argv[])
 	/* now we could drop privileges, if we did not use setsockopt() calls for IP_TOS etc. later */
 	/* setuid(getuid()); */
 	/* #endif   */
-	printf("adl_init: ret = %d", ret);
 	return ret;
 }
 

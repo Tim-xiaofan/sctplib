@@ -263,6 +263,10 @@ static unsigned int lastInitiateTag;
   Descriptor of socket used by all associations and SCTP-instances.
  */
 static gint sctp_socket;
+static struct rte_ring* sctp_rring;
+static struct rte_ring* sctp_rring1;
+static struct rte_ring* sctp_sring;
+static struct rte_ring* sctp_sring1;
 
 #ifdef HAVE_IPV6
 static gint ipv6_sctp_socket;
@@ -1487,7 +1491,8 @@ int sctp_initLibrary(int argc, char *argv[])
     event_log(EXTERNAL_EVENT, "sctp_initLibrary called");
     /**
      * 1.初始化用来监听时间的fds数组
-     * 2.为入境请求绑定本地套接字**/
+     * 2.为入境请求绑定本地套接字
+	 * 3.create ring**/
     result = adl_init_adaptation_layer(&myRWND, argc, argv);
 
     if (result < 0) {
@@ -1887,6 +1892,18 @@ sctp_registerInstance(unsigned short port,
          if (!adl_rscb_code)
              error_log(ERROR_FATAL, "registration of IPv4 socket call back function failed");
     }
+	if(with_ipv4 && sctp_rring == NULL && sctp_rring1 ==NULL && sctp_sring ==NULL && sctp_sring1 == NULL)
+	{
+		sctp_rring = (struct rte_ring*)malloc(sizeof(struct rte_ring));
+		sctp_rring1 = (struct rte_ring*)malloc(sizeof(struct rte_ring));
+		sctp_sring = (struct rte_ring*)malloc(sizeof(struct rte_ring));
+		sctp_sring1 = (struct rte_ring*)malloc(sizeof(struct rte_ring));
+		if(sctp_rring == NULL || sctp_rring1 == NULL || sctp_sring == NULL || sctp_sring1 == NULL)
+		  error_log(ERROR_FATAL, "sctp: alloc memory for rings failed.\n");
+		adl_get_sctp_rings(sctp_rring, sctp_rring1, sctp_sring, sctp_sring1);
+		if(sctp_rring == NULL || sctp_rring1 == NULL || sctp_sring == NULL || sctp_sring1 == NULL)
+			error_log(ERROR_FATAL, "sctp rings create falied\n");
+	}
     if (with_ipv4 == TRUE) {
         ipv4_users++;
         sctpInstance->uses_IPv4 = TRUE;
