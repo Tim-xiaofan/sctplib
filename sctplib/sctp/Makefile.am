@@ -18,9 +18,12 @@ libsctplib_la_SOURCES  = adaptation.c adaptation.h \
                          sbundling.c  \
                          streamengine.c streamengine.h \
                          timer_list.c timer_list.h \
-                         SCTP-control.c SCTP-control.h
+                         SCTP-control.c SCTP-control.h \
+						 dpdk_ops.c dpdk_ops.h
 
 include_HEADERS        = sctp.h
-libsctplib_la_LIBADD   = @glib_LIBS@
+libsctplib_la_LIBADD   = @glib_LIBS@ \
+						 @dpdk_LIBS@ \
+						 -lrte_pmd_ixgbe
 libsctplib_la_LDFLAGS  = \
    -version-info $(SCTPLIB_CURRENT):$(SCTPLIB_REVISION):$(SCTPLIB_AGE)

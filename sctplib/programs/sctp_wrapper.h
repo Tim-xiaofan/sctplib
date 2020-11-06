@@ -55,7 +55,7 @@ int
 SCTP_setLibraryParameters(SCTP_LibraryParameters *params);
 
 int
-SCTP_initLibrary(void);
+SCTP_initLibrary(int argc, char *argv[]);
 
 int
 SCTP_registerInstance(unsigned short port,

@@ -83,3 +83,7 @@ sctplib/programs/tags
 *.out
 *.sh
 *.cap
+core*
+sctplib/sctp/tags
+tags
+

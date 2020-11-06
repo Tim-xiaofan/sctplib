@@ -92,11 +92,11 @@ SCTP_getLibraryParameters(SCTP_LibraryParameters *params)
 }
 
 int
-SCTP_initLibrary(void)
+SCTP_initLibrary(int argc, char *argv[])
 {
     int result;
 
-    if ((result = sctp_initLibrary()) != SCTP_SUCCESS) {
+    if ((result = sctp_initLibrary(argc, argv)) < 0) {
         if (result == SCTP_LIBRARY_ALREADY_INITIALIZED) {
             fprintf(stderr, "sctp_initLibrary: called muliple times.\n");
         } else 

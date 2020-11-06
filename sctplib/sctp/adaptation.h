@@ -52,10 +52,16 @@
 #include <config.h>
 #endif
 
+
 #include "sctp.h"
 #include "globals.h"
 #include "distribution.h"
 
+/*DPDK ring*/
+#include <rte_mempool.h>
+#include <rte_memory.h>
+#include <rte_string_fns.h>
+#include <rte_ring.h>
 
 unsigned int adl_random(void);
 
@@ -110,7 +116,7 @@ int adl_send_message(int sfd, void *buf, int len, union sockunion *dest, unsigne
  * capturing（捕获） SCTP packets, and also opens ICMP sockets, so we can get ICMP events,
  * e.g.  for Path-MTU discovery !
  */
-int adl_init_adaptation_layer(int * myRwnd);
+int adl_init_adaptation_layer(int * myRwnd, int argc, char *argv[]);
 
 
 

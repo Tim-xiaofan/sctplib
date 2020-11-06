@@ -427,11 +427,21 @@ int main(int argc, char **argv)
 	discardUlp.shutdownCompleteNotif     = &shutdownCompleteNotif;
 	discardUlp.peerShutdownReceivedNotif = &shutdownReceivedNotif;
 
+
+	int ret = SCTP_initLibrary(argc, argv);
+	if(ret < 0)
+	{
+		printf("SCTP_initLibrary error\n");
+		exit(-1);
+	}
+	argc -= ret;
+	argv += ret;
+	
 	/* handle all command line options */
 	getArgs(argc, argv);
 	checkArgs();
+	printf("test1\n");
 
-	SCTP_initLibrary();
 	SCTP_getLibraryParameters(&params);
 	params.sendOotbAborts = sendOOTBAborts;
 	params.supportPRSCTP = 1;/*启用PRSCTP扩展*/

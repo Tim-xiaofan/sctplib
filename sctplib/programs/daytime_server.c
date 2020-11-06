@@ -322,7 +322,7 @@ int main(int argc, char **argv)
     getArgs(argc, argv);
     checkArgs();
     
-    SCTP_initLibrary();
+    SCTP_initLibrary(argc, argv);
     SCTP_getLibraryParameters(&params);
     params.sendOotbAborts    = sendOOTBAborts;
     params.checksumAlgorithm = SCTP_CHECKSUM_ALGORITHM_CRC32C;

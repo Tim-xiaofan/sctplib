@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    sctp_initLibrary();
+    sctp_initLibrary(argc, argv);
     SCTP_getLibraryParameters(&params);
     for(i = 2; i < argc; i++) {
         if(strcmp(argv[i], "-i") == 0) {

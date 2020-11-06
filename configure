@@ -639,6 +639,7 @@ SCTPLIB_AGE
 SCTPLIB_REVISION
 SCTPLIB_CURRENT
 thread_LIBS
+dpdk_LIBS
 glib_LIBS
 GLIB_COMPILE_RESOURCES
 GLIB_MKENUMS
@@ -13560,7 +13561,15 @@ CPPFLAGS="$CPPFLAGS $GLIB_CFLAGS"
 glib_LIBS="$GLIB_LIBS"
 
 
+# #####ADD DPDK LIB###
+DPDK_CFLAGS=`pkg-config --cflags libdpdk`
+DPDK_LIBS=`pkg-config --libs libdpdk`
+CFLAGS="$CFLAGS $DPDK_CFLAGS"
+CPPFLAGS="$CPPFLAGS $DPDK_CFLAGS"
+CXXFLAGS="$CXXFLAGS $DPDK_CFLAGS"
+dpdk_LIBS="$DPDK_LIBS"
 
+LIBS="$GLIB_LIBS $DPDK_LIBS"
 # ###### Operating system checks ############################################
 case $host_os in
 bsdi*)
@@ -15934,6 +15943,8 @@ echo "   Build with Maintainer Mode : $enable_maintainer_mode"
 echo "   Build with SCTP over UDP   : $enable_sctp_over_udp"
 echo ""
 echo "   glib_LIBS                  : $glib_LIBS"
+echo ""
+echo "   dpdk_LIBS                  : $dpdk_LIBS"
 echo ""
 echo "   CFLAGS                     : $CFLAGS"
 echo "   CXXFLAGS                   : $CXXFLAGS"

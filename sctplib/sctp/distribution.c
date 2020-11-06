@@ -1463,7 +1463,7 @@ unsigned int sctp_getLibraryVersion(void)
  * @return 0 for success, 1 for adaptation level error, -9 for already called
  * (i.e. the function has already been called), -2 for insufficient rights.
  */
-int sctp_initLibrary(void)
+int sctp_initLibrary(int argc, char *argv[])
 {
     int i, result, sfd = -1, maxMTU=0;
     /* initialize the output of event/error-log functions */
@@ -1488,9 +1488,9 @@ int sctp_initLibrary(void)
     /**
      * 1.初始化用来监听时间的fds数组
      * 2.为入境请求绑定本地套接字**/
-    result = adl_init_adaptation_layer(&myRWND);
+    result = adl_init_adaptation_layer(&myRWND, argc, argv);
 
-    if (result != 0) {
+    if (result < 0) {
         LEAVE_LIBRARY("sctp_initLibrary");
         return SCTP_SPECIFIC_FUNCTION_ERROR;
     }
@@ -1518,7 +1518,7 @@ int sctp_initLibrary(void)
 
     sctpLibraryInitialized = TRUE;
     LEAVE_LIBRARY("sctp_initLibrary");
-    return SCTP_SUCCESS;
+    return result;
 }
 
 

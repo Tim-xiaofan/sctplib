@@ -445,7 +445,7 @@ int main(int argc, char **argv)
         version, version & 0xFFFF0000, version & 0xFFFF);
     fflush(fptr);
 
-    SCTP_initLibrary();
+    SCTP_initLibrary(argc, argv);
     SCTP_getLibraryParameters(&params);
     params.sendOotbAborts = 0;
     params.checksumAlgorithm = SCTP_CHECKSUM_ALGORITHM_CRC32C;

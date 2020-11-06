@@ -142,7 +142,7 @@ extern "C" {
 #define SCTP_BUFFER_TOO_SMALL               -14
 #define SCTP_NO_CHUNKS_IN_QUEUE             -15
 #define SCTP_INSTANCE_IN_USE                -16
-#define SCTP_SPECIFIC_FUNCTION_ERROR        1
+#define SCTP_SPECIFIC_FUNCTION_ERROR        -17
 
 /* some constants for return codes from COMMUNICATION LOST or COMMUNICATION UP callbacks */
 #define SCTP_COMM_LOST_ABORTED                   1
@@ -496,7 +496,7 @@ struct SCTP_Path_Status
  * (i.e. the function has already been called before), -2 for insufficient rights
  * (you need root-rights to open RAW sockets !).
  */
-int sctp_initLibrary(void);
+int sctp_initLibrary(int argc, char* argv[]);
 
 
 /**

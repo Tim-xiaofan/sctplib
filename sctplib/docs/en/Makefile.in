@@ -221,6 +221,7 @@ builddir = @builddir@
 datadir = @datadir@
 datarootdir = @datarootdir@
 docdir = @docdir@
+dpdk_LIBS = @dpdk_LIBS@
 dvidir = @dvidir@
 exec_prefix = @exec_prefix@
 glib_LIBS = @glib_LIBS@
