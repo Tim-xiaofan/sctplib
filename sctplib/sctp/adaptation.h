@@ -94,7 +94,7 @@ int adl_setReceiveBufferSize(int sfd, int new_size);
 
 /*获取adpter layer的sctp socket fd*/
 gint adl_get_sctpv4_socket(void);
-void adl_get_sctp_rings(struct rte_ring* rr, struct rte_ring* rr1, struct rte_ring* sr, struct rte_ring* sr1);
+void adl_get_sctp_rings(struct rte_ring* rr, struct rte_ring* rr1, struct rte_ring* sr, struct rte_ring* sr1, struct rte_mempool *mp);
 #ifdef HAVE_IPV6
 gint adl_get_sctpv6_socket(void);
 #endif
@@ -129,7 +129,7 @@ int adl_init_adaptation_layer(int * myRwnd, int argc, char *argv[]);
  */
 int adl_register_socket_cb(gint sfd, sctp_socketCallback scf);
 
-
+int adl_register_rings_cb(struct rte_ring *rr, struct rte_ring *rr1, struct rte_ring *sr, struct rte_ring *sr1, sctp_socketCallback scf);
 /**
  *	function to close a bound socket from our list of socket descriptors
  *	@param	sfd	socket file descriptor to be closed

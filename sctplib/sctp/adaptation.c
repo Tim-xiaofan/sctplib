@@ -47,6 +47,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <rte_memcpy.h>
 
 #include "dpdk_ops.h"
 
@@ -441,6 +442,8 @@ int extendedPoll(struct extendedpollfd *fdlist,
 static unsigned int number_of_sendevents = 0;
 /* a static receive buffer  */
 static unsigned char rbuf[MAX_MTU_SIZE + 20];
+/* a static receive buffer*/
+static unsigned char r_rbuf[MAX_MTU_SIZE + 20];
 /* a static value that keeps currently treated timer id */
 static unsigned int current_tid = 0;
 
@@ -448,10 +451,11 @@ static struct extendedpollfd poll_fds[NUM_FDS];
 static int num_of_fds = 0; /*套接字的数量*/
 
 static int sctp_sfd = -1; /* socket fd for standard SCTP port....      */
-static struct rte_ring* adl_recv_ring;
-static struct rte_ring* adl_recv_ring1;
-static struct rte_ring* adl_send_ring;
-static struct rte_ring* adl_send_ring1;
+static struct rte_ring *adl_recv_ring;
+static struct rte_ring *adl_recv_ring1;
+static struct rte_ring *adl_send_ring;
+static struct rte_ring *adl_send_ring1;
+static struct rte_mempool *adl_message_pool;
 
 #ifdef HAVE_IPV6
 static int sctpv6_sfd = -1;
@@ -736,10 +740,10 @@ gint adl_get_sctpv4_socket(void)
 }
 
 /**/
-void adl_get_sctp_rings(struct rte_ring* rr, struct rte_ring* rr1, struct rte_ring* sr, struct rte_ring* sr1)
+void adl_get_sctp_rings(struct rte_ring *rr, struct rte_ring *rr1, struct rte_ring *sr, struct rte_ring *sr1, struct rte_mempool *mp)
 {
 	printf("!!!!!!enter adl_get_sctp_rings.\n");
-	if(adl_recv_ring == NULL || adl_recv_ring1 == NULL || adl_send_ring == NULL || adl_send_ring1 == NULL)
+	if (adl_recv_ring == NULL || adl_recv_ring1 == NULL || adl_send_ring == NULL || adl_send_ring1 == NULL)
 	{
 		printf("adl_get_sctp_rings:ring == NULL\n");
 		exit(-1);
@@ -749,7 +753,8 @@ void adl_get_sctp_rings(struct rte_ring* rr, struct rte_ring* rr1, struct rte_ri
 	memcpy(rr1, adl_recv_ring1, sizeof(struct rte_ring));
 	memcpy(sr, adl_send_ring, sizeof(struct rte_ring));
 	memcpy(sr1, adl_send_ring1, sizeof(struct rte_ring));
-	printf("!!!!!rr(%s, %s, %s, %s)\n", rr->name, rr1->name, sr->name, sr1->name);
+	memcpy(mp, adl_message_pool, sizeof(struct rte_mempool));
+	printf("!!!!!rr(%s, %s, %s, %s, %s)\n", rr->name, rr1->name, sr->name, sr1->name, mp->name);
 }
 
 #ifdef HAVE_IPV6
@@ -1181,7 +1186,6 @@ int adl_receive_message(int sfd, void *dest, int maxlen, union sockunion *from, 
 
 	if (sfd == sctp_sfd)
 	{
-		printf("sfd == sctp_sfd\n");
 		len = recv(sfd, dest, maxlen, 0);
 #ifdef LINUX
 		iph = (struct iphdr *)dest;
@@ -1349,6 +1353,88 @@ int adl_get_message(int sfd, void *dest, int maxlen, union sockunion *from, sock
 		error_log(ERROR_FATAL, "recvfrom  failed in get_message(), aborting !");
 
 	return len;
+}
+/*int sfd, void *dest, int maxlen, union sockunion *from, union sockunion *to)*/
+int adl_dequeue_message(struct rte_ring *recv_ring, void* dest, int maxlen, union sockunion *from, union sockunion *to)
+{
+	int len;
+	void *msg;
+	if (rte_ring_dequeue(recv_ring, &msg) < 0)
+		return -1;
+	if (msg == NULL)
+		return -1;
+	len = *((int *)msg) - 14;
+	printf("recv from ring'%s': len = %d\n", recv_ring->name, len);
+	/*去掉以太网头*/
+	if(len > 0)rte_memcpy(dest, (char *)msg + sizeof(int) + 14, len);
+	rte_mempool_put(adl_message_pool, msg);
+	if(len < 20)
+		error_log(ERROR_FATAL, "not ip");
+	
+	if(len < 0)
+		return -1;
+	/*解析IP头*/
+	struct iphdr *iph;
+	if ((dest == NULL) || (from == NULL) || (to == NULL))
+		return -1;
+	iph = (struct iphdr *)dest;
+	to->sa.sa_family = AF_INET;
+	to->sin.sin_port = htons(0);
+	to->sin.sin_addr.s_addr = iph->daddr;
+	from->sa.sa_family = AF_INET;
+	from->sin.sin_port = htons(0);
+	from->sin.sin_addr.s_addr = iph->saddr;
+	return len;
+}
+
+int dispatch_rings()
+{
+	int length = 0;
+	union sockunion src, dest;
+	struct sockaddr_in *src_in;
+	struct iphdr *iph;
+	int hlen = 0;
+
+	int i = 0;
+	struct rte_ring *m_ring = NULL;
+	for(i = 0; i < 2; i++)
+	{
+		if(i == 0)
+			m_ring = adl_recv_ring;
+		else
+			m_ring = adl_recv_ring1;
+		if(i==0 && rte_ring_count(m_ring) > 0)
+		{
+			length = adl_dequeue_message(m_ring, r_rbuf, MAX_MTU_SIZE, &src, &dest);
+			if (length < 0)
+				if (length < 0)
+					break;
+			switch (sockunion_family(&src))
+			{
+			case AF_INET:
+				src_in = (struct sockaddr_in *)&src;
+				event_logi(VERBOSE, "IPv4/SCTP-Message from %s -> activating callback",
+						   inet_ntoa(src_in->sin_addr));
+				iph = (struct iphdr *)rbuf;
+				hlen = iph->ihl << 2;
+				if (length < hlen)
+				{
+					error_logii(ERROR_MINOR,
+								"dispatch_event : packet too short (%d bytes) from %s",
+								length, inet_ntoa(src_in->sin_addr));
+				}
+				else
+				{
+					length -= hlen;
+					mdi_receiveMessageAtRing(m_ring, &r_rbuf[hlen], length, &src, &dest);
+				}
+				break;
+			default:
+				error_logi(ERROR_MAJOR, "Unsupported Address Family Type %u ", sockunion_family(&src));
+				break;
+			}
+		}
+	}
 }
 
 /**
@@ -1633,6 +1719,8 @@ int adl_extendedEventLoop(void (*lock)(void *data), void (*unlock)(void *data), 
 
 	/* print_debug_list(INTERNAL_EVENT_0); */
 	result = extendedPoll(poll_fds, &num_of_fds, msecs, lock, unlock, data);
+	int ret = dispatch_rings();
+	return ret;
 	switch (result)
 	{
 	case -1: /* err */
@@ -1942,8 +2030,9 @@ int adl_init_adaptation_layer(int *myRwnd, int argc, char *argv[])
 	adl_recv_ring1 = recv_ring1;
 	adl_send_ring = send_ring;
 	adl_send_ring1 = send_ring1;
-	printf("(%s, %s, %s, %s)\n", adl_recv_ring->name, adl_recv_ring1->name, adl_send_ring->name, adl_send_ring1->name);
-	if(adl_recv_ring == NULL || adl_recv_ring1 == NULL || adl_send_ring == NULL || adl_send_ring1 == NULL)
+	adl_message_pool = message_pool;
+	printf("(%s, %s, %s, %s, %s)\n", adl_recv_ring->name, adl_recv_ring1->name, adl_send_ring->name, adl_send_ring1->name, adl_message_pool->name);
+	if (adl_recv_ring == NULL || adl_recv_ring1 == NULL || adl_send_ring == NULL || adl_send_ring1 == NULL)
 	{
 		printf("adl_init: rings == NULL on creat\n");
 		exit(-1);
@@ -2160,6 +2249,11 @@ int adl_unregisterUserCallback(int fd)
 int adl_register_socket_cb(gint sfd, sctp_socketCallback scf)
 {
 	return (adl_register_fd_cb(sfd, EVENTCB_TYPE_SCTP, POLLIN | POLLPRI, (void (*)(void *, void *))scf, NULL));
+}
+
+int adl_register_rings_cb(struct rte_ring *rr, struct rte_ring *rr1, struct rte_ring *sr, struct rte_ring *sr1, sctp_socketCallback scf)
+{
+	return 0;
 }
 
 /**

@@ -263,10 +263,11 @@ static unsigned int lastInitiateTag;
   Descriptor of socket used by all associations and SCTP-instances.
  */
 static gint sctp_socket;
-static struct rte_ring* sctp_rring;
-static struct rte_ring* sctp_rring1;
-static struct rte_ring* sctp_sring;
-static struct rte_ring* sctp_sring1;
+static struct rte_ring *sctp_rring;
+static struct rte_ring *sctp_rring1;
+static struct rte_ring *sctp_sring;
+static struct rte_ring *sctp_sring1;
+static struct rte_mempool *sctp_message_pool;
 
 #ifdef HAVE_IPV6
 static gint ipv6_sctp_socket;
@@ -1441,6 +1442,596 @@ mdi_receiveMessage(gint socket_fd,
 
 }                               /* end: mdi_receiveMessage */
 
+void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer,
+                   int bufferLength, union sockunion * source_addr,
+                   union sockunion * dest_addr)
+{
+	SCTP_message *message;
+    SCTP_init_fixed *initChunk = NULL;
+    guchar* initPtr = NULL;
+    guchar source_addr_string[SCTP_MAX_IP_LEN];
+    guchar dest_addr_string[SCTP_MAX_IP_LEN];
+    SCTP_vlparam_header* vlptr = NULL;
+
+    union sockunion alternateFromAddress;
+    int i = 0;
+    unsigned int len, state, chunkArray = 0;
+    boolean sourceAddressExists = FALSE;
+    boolean sendAbort = FALSE;
+    boolean discard = FALSE;
+    unsigned int addressType = 0;
+    int retval = 0, supportedAddressTypes = 0;
+
+    boolean initFound = FALSE, cookieEchoFound = FALSE, abortFound = FALSE;
+
+    short shutdownCompleteCID;
+    short abortCID;
+
+    SCTP_instance temporary;
+    GList* result = NULL;
+
+    /* FIXME:  check this out, if it works at all :-D */
+    lastFromAddress = source_addr;
+    lastDestAddress = dest_addr;
+
+    lastFromPath = 0;
+
+    message = (SCTP_message *) buffer;
+
+    if (!validate_datagram(buffer, bufferLength)) {
+        event_log(INTERNAL_EVENT_0, "received corrupted datagramm");
+        lastFromAddress = NULL;
+        lastDestAddress = NULL;
+        return;
+    }
+
+    len = bufferLength - sizeof(SCTP_common_header);
+
+    /* save from address for response if a remote address is not available otherwise.
+       For instance initAck or cookieAck. */
+    lastFromPort = ntohs(message->common_header.src_port);
+    lastDestPort = ntohs(message->common_header.dest_port);
+
+    if (lastFromPort == 0 || lastDestPort == 0) {
+        error_log(ERROR_MINOR, "received DG with invalid (i.e. 0) ports");
+        lastFromAddress = NULL;
+        lastDestAddress = NULL;
+        lastFromPort = 0;
+        lastDestPort = 0;
+        return;
+    }
+
+    if (sockunion_family(dest_addr) == AF_INET) {
+        addressType = SUPPORT_ADDRESS_TYPE_IPV4;
+        event_log(VERBOSE, "mdi_receiveMessage: checking for correct IPV4 addresses");
+        if (IN_CLASSD(ntohl(dest_addr->sin.sin_addr.s_addr))) discard = TRUE;
+        if (IN_EXPERIMENTAL(ntohl(dest_addr->sin.sin_addr.s_addr))) discard = TRUE;
+        if (IN_BADCLASS(ntohl(dest_addr->sin.sin_addr.s_addr))) discard = TRUE;
+        if (INADDR_ANY == ntohl(dest_addr->sin.sin_addr.s_addr)) discard = TRUE;
+        if (INADDR_BROADCAST == ntohl(dest_addr->sin.sin_addr.s_addr)) discard = TRUE;
+
+        if (IN_CLASSD(ntohl(source_addr->sin.sin_addr.s_addr))) discard = TRUE;
+        if (IN_EXPERIMENTAL(ntohl(source_addr->sin.sin_addr.s_addr))) discard = TRUE;
+        if (IN_BADCLASS(ntohl(source_addr->sin.sin_addr.s_addr))) discard = TRUE;
+        if (INADDR_ANY == ntohl(source_addr->sin.sin_addr.s_addr)) discard = TRUE;
+        if (INADDR_BROADCAST == ntohl(source_addr->sin.sin_addr.s_addr)) discard = TRUE;
+
+        /*  if ((INADDR_LOOPBACK != ntohl(source_addr->sin.sin_addr.s_addr)) &&
+            (source_addr->sin.sin_addr.s_addr == dest_addr->sin.sin_addr.s_addr)) discard = TRUE;
+         */
+
+    } else
+#ifdef HAVE_IPV6
+    if (sockunion_family(dest_addr) == AF_INET6) {
+        addressType = SUPPORT_ADDRESS_TYPE_IPV6;
+        event_log(VERBOSE, "mdi_receiveMessage: checking for correct IPV6 addresses");
+#if defined (LINUX)
+        if (IN6_IS_ADDR_UNSPECIFIED(&(dest_addr->sin6.sin6_addr.s6_addr))) discard = TRUE;
+        if (IN6_IS_ADDR_MULTICAST(&(dest_addr->sin6.sin6_addr.s6_addr))) discard = TRUE;
+        /* if (IN6_IS_ADDR_V4COMPAT(&(dest_addr->sin6.sin6_addr.s6_addr))) discard = TRUE; */
+
+        if (IN6_IS_ADDR_UNSPECIFIED(&(source_addr->sin6.sin6_addr.s6_addr))) discard = TRUE;
+        if (IN6_IS_ADDR_MULTICAST(&(source_addr->sin6.sin6_addr.s6_addr))) discard = TRUE;
+        /*  if (IN6_IS_ADDR_V4COMPAT(&(source_addr->sin6.sin6_addr.s6_addr))) discard = TRUE; */
+        /*
+        if ((!IN6_IS_ADDR_LOOPBACK(&(source_addr->sin6.sin6_addr.s6_addr))) &&
+            IN6_ARE_ADDR_EQUAL(&(source_addr->sin6.sin6_addr.s6_addr),
+                               &(dest_addr->sin6.sin6_addr.s6_addr))) discard = TRUE;
+        */
+#else
+        if (IN6_IS_ADDR_UNSPECIFIED(&(dest_addr->sin6.sin6_addr))) discard = TRUE;
+        if (IN6_IS_ADDR_MULTICAST(&(dest_addr->sin6.sin6_addr))) discard = TRUE;
+        /* if (IN6_IS_ADDR_V4COMPAT(&(dest_addr->sin6.sin6_addr))) discard = TRUE; */
+
+        if (IN6_IS_ADDR_UNSPECIFIED(&(source_addr->sin6.sin6_addr))) discard = TRUE;
+        if (IN6_IS_ADDR_MULTICAST(&(source_addr->sin6.sin6_addr))) discard = TRUE;
+        /* if (IN6_IS_ADDR_V4COMPAT(&(source_addr->sin6.sin6_addr))) discard = TRUE; */
+        /*
+        if ((!IN6_IS_ADDR_LOOPBACK(&(source_addr->sin6.sin6_addr))) &&
+             IN6_ARE_ADDR_EQUAL(&(source_addr->sin6.sin6_addr),
+                                &(dest_addr->sin6.sin6_addr))) discard = TRUE;
+        */
+#endif
+    } else
+#endif
+    {
+        error_log(ERROR_FATAL, "mdi_receiveMessage: Unsupported AddressType Received !");
+        discard = TRUE;
+    }
+    adl_sockunion2str(source_addr, source_addr_string, SCTP_MAX_IP_LEN);
+    adl_sockunion2str(dest_addr, dest_addr_string, SCTP_MAX_IP_LEN);
+
+    event_logiiiii(EXTERNAL_EVENT,
+                  "mdi_receiveMessage : len %d, sourceaddress : %s, src_port %u,dest: %s, dest_port %u",
+                  bufferLength, source_addr_string, lastFromPort, dest_addr_string,lastDestPort);
+
+    if (discard == TRUE) {
+        lastFromAddress = NULL;
+        lastDestAddress = NULL;
+        lastFromPort = 0;
+        lastDestPort = 0;
+        sctpInstance = NULL;
+        currentAssociation = NULL;
+        event_logi(INTERNAL_EVENT_0, "mdi_receiveMessage: discarding packet for incorrect address %s",
+                   dest_addr_string);
+        return;
+    }
+
+
+    /* Retrieve association from list  */
+    currentAssociation = retrieveAssociationByTransportAddress(lastFromAddress, lastFromPort,lastDestPort);
+
+    if (currentAssociation != NULL) {
+        /* meaning we MUST have an instance with no fixed port */
+        sctpInstance = currentAssociation->sctpInstance;
+        supportedAddressTypes = 0;
+    } else {
+        /* OK - if this packet is for a server, we will find an SCTP instance, that shall
+           handle it (i.e. we have the SCTP instance's localPort set and it matches the
+           packet's destination port */
+        temporary.localPort = lastDestPort;
+        temporary.noOfLocalAddresses = 1;
+        temporary.has_INADDR_ANY_set = FALSE;
+        temporary.has_IN6ADDR_ANY_set = FALSE;
+        temporary.localAddressList = dest_addr;
+        temporary.supportedAddressTypes = addressType;
+
+        result = g_list_find_custom(InstanceList, &temporary, &CheckForAddressInInstance);
+
+        if (result == NULL) {
+            event_logi(VERBOSE, "Couldn't find SCTP Instance for Port %u and Address in List !",lastDestPort);
+            /* may be an an association that is a client (with instance port 0) */
+            sctpInstance = NULL;
+#ifdef HAVE_IPV6
+            supportedAddressTypes = SUPPORT_ADDRESS_TYPE_IPV6 | SUPPORT_ADDRESS_TYPE_IPV4;
+#else
+            supportedAddressTypes = SUPPORT_ADDRESS_TYPE_IPV4;
+#endif
+        } else {
+            sctpInstance = (SCTP_instance*)result->data;
+            supportedAddressTypes = sctpInstance->supportedAddressTypes;
+            event_logii(VERBOSE, "Found an SCTP Instance for Port %u and Address in the list, types: %d !",
+                                lastDestPort, supportedAddressTypes);
+        }
+    }
+
+    if (mdi_destination_address_okay(dest_addr) == FALSE) {
+         event_log(VERBOSE, "mdi_receiveMsg: this packet is not for me, DISCARDING !!!");
+         lastFromAddress = NULL;
+         lastDestAddress = NULL;
+         lastFromPort = 0;
+         lastDestPort = 0;
+         sctpInstance = NULL;
+         currentAssociation = NULL;
+         return;
+    }
+
+    lastInitiateTag = ntohl(message->common_header.verification_tag);
+
+    chunkArray = rbu_scanPDU(message->sctp_pdu, len);
+
+
+
+    if (currentAssociation == NULL) {
+        if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT)) != NULL) {
+            event_log(VERBOSE, "mdi_receiveMsg: Looking for source address in INIT CHUNK");
+            retval = 0; i = 1;
+            do {
+                retval = rbu_findAddress(initPtr, i, &alternateFromAddress, supportedAddressTypes);
+                if (retval == 0) {
+                    currentAssociation = retrieveAssociationByTransportAddress(&alternateFromAddress,
+                                                                               lastFromPort,lastDestPort);
+                }
+                i++;
+            } while (currentAssociation == NULL && retval == 0);
+        }
+        if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT_ACK)) != NULL) {
+            event_log(VERBOSE, "mdi_receiveMsg: Looking for source address in INIT_ACK CHUNK");
+            retval = 0; i = 1;
+            do {
+                retval = rbu_findAddress(initPtr, i, &alternateFromAddress, supportedAddressTypes);
+                if (retval == 0) {
+                    currentAssociation = retrieveAssociationByTransportAddress(&alternateFromAddress,
+                                                                               lastFromPort,lastDestPort);
+                }
+                i++;
+            } while (currentAssociation == NULL && retval == 0);
+        }
+        if (currentAssociation != NULL) {
+            event_log(VERBOSE, "mdi_receiveMsg: found association from INIT (ACK) CHUNK");
+            sourceAddressExists = TRUE;
+        } else {
+            event_log(VERBOSE, "mdi_receiveMsg: found NO association from INIT (ACK) CHUNK");
+        }
+    }
+
+    /* check whether chunk is illegal or not (see section 3.1 of RFC 4960) */
+    if ( ((rbu_datagramContains(CHUNK_INIT, chunkArray) == TRUE) && (chunkArray != (1 << CHUNK_INIT))) ||
+         ((rbu_datagramContains(CHUNK_INIT_ACK, chunkArray) == TRUE) && (chunkArray != (1 << CHUNK_INIT_ACK))) ||
+         ((rbu_datagramContains(CHUNK_SHUTDOWN_COMPLETE, chunkArray) == TRUE) && (chunkArray != (1 << CHUNK_SHUTDOWN_COMPLETE)))
+       ){
+
+        error_log(ERROR_MINOR, "mdi_receiveMsg: discarding illegal packet....... :-)");
+
+        /* silently discard */
+         lastFromAddress = NULL;
+         lastDestAddress = NULL;
+         lastFromPort = 0;
+         lastDestPort = 0;
+         sctpInstance = NULL;
+         currentAssociation = NULL;
+         return;
+    }
+
+    /* check if sctp-message belongs to an existing association */
+    if (currentAssociation == NULL) {
+         event_log(VVERBOSE, "mdi_receiveMsg: currentAssociation==NULL, start scanning !");
+         /* This is not very elegant, but....only used when assoc is being build up, so :-D */
+         if (rbu_datagramContains(CHUNK_ABORT, chunkArray) == TRUE) {
+            event_log(INTERNAL_EVENT_0, "mdi_receiveMsg: Found ABORT chunk, discarding it !");
+            lastFromAddress = NULL;
+            lastDestAddress = NULL;
+            lastFromPort = 0;
+            lastDestPort = 0;
+            sctpInstance = NULL;
+            currentAssociation = NULL;
+            return;
+         }
+         if (rbu_datagramContains(CHUNK_SHUTDOWN_ACK, chunkArray) == TRUE) {
+            event_log(INTERNAL_EVENT_0,
+                        "mdi_receiveMsg: Found SHUTDOWN_ACK chunk, send SHUTDOWN_COMPLETE !");
+            /* section 8.4.5 : return SHUTDOWN_COMPLETE with peers veri-tag and T-Bit set */
+            shutdownCompleteCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_COMPLETE, FLAG_NO_TCB);
+            bu_put_Ctrl_Chunk(ch_chunkString(shutdownCompleteCID), NULL);
+            bu_unlock_sender(NULL);
+            /* should send it to last address */
+            bu_sendAllChunks(NULL);
+            /* free abort chunk */
+            ch_deleteChunk(shutdownCompleteCID);
+
+            /* send an ABORT with peers veri-tag, set T-Bit */
+            event_log(VERBOSE, "mdi_receiveMsg: sending CHUNK_SHUTDOWN_COMPLETE  ");
+            lastFromPort = 0;
+            lastDestPort = 0;
+            lastDestAddress = NULL;
+            lastFromAddress = NULL;
+            sctpInstance = NULL;
+            currentAssociation = NULL;
+            return;
+        }
+        if (rbu_datagramContains(CHUNK_SHUTDOWN_COMPLETE, chunkArray) == TRUE) {
+            event_log(INTERNAL_EVENT_0,
+                     "mdi_receiveMsg: Found SHUTDOWN_COMPLETE chunk, discarding it !");
+            lastFromPort = 0;
+            lastDestPort = 0;
+            lastDestAddress = NULL;
+            lastFromAddress = NULL;
+            sctpInstance = NULL;
+            currentAssociation = NULL;
+            return;
+        }
+        if (rbu_datagramContains(CHUNK_COOKIE_ACK, chunkArray) == TRUE) {
+            event_log(INTERNAL_EVENT_0, "mdi_receiveMsg: Found COOKIE_ACK chunk, discarding it !");
+            lastFromPort = 0;
+            lastDestPort = 0;
+            lastDestAddress = NULL;
+            lastFromAddress = NULL;
+            sctpInstance = NULL;
+            currentAssociation = NULL;
+            return;
+        }
+
+        /* section 8.4.7) : Discard the datagram, if it contains a STALE-COOKIE ERROR */
+        if (rbu_scanDatagramForError(message->sctp_pdu, len, ECC_STALE_COOKIE_ERROR) == TRUE) {
+            event_log(INTERNAL_EVENT_0,
+                          "mdi_receiveMsg: Found STALE COOKIE ERROR, discarding packet !");
+            lastFromPort = 0;
+            lastDestPort = 0;
+            lastDestAddress = NULL;
+            lastFromAddress = NULL;
+            sctpInstance = NULL;
+            currentAssociation = NULL;
+            return;
+        }
+
+        if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT)) != NULL) {
+            if (sctpInstance != NULL) {
+                if (lastDestPort != sctpInstance->localPort || sctpInstance->localPort == 0) {
+                    /* destination port is not the listening port of this this SCTP-instance. */
+                    event_log(INTERNAL_EVENT_0,
+                              "mdi_receiveMsg: got INIT Message, but dest. port does not fit -> ABORT");
+                    sendAbort = TRUE;
+                    /* as per section 5.1 :
+                       If an endpoint receives an INIT, INIT ACK, or COOKIE ECHO chunk but
+                       decides not to establish the new association due to missing mandatory
+                       parameters in the received INIT or INIT ACK, invalid parameter values,
+                       or lack of local resources, it MUST respond with an ABORT chunk */
+                } else {
+                     event_log(INTERNAL_EVENT_0, "mdi_receiveMsg: INIT Message - processing it !");
+                }
+                initChunk = ((SCTP_init_fixed *) & ((SCTP_init *) message->sctp_pdu)->init_fixed);
+                lastInitiateTag = ntohl(initChunk->init_tag);
+                event_logi(VERBOSE, "setting lastInitiateTag to %x ", lastInitiateTag);
+
+                if ((vlptr = (SCTP_vlparam_header*)rbu_scanInitChunkForParameter(initPtr, VLPARAM_HOST_NAME_ADDR)) != NULL) {
+                    sendAbort = TRUE;
+                }
+
+            } else {    /* we do not have an instance up listening on that port-> ABORT him */
+                event_log(INTERNAL_EVENT_0,
+                         "mdi_receiveMsg: got INIT Message, but no instance found -> IGNORE");
+
+                sendAbort = TRUE;
+                initChunk = ((SCTP_init_fixed *) & ((SCTP_init *) message->sctp_pdu)->init_fixed);
+                lastInitiateTag = ntohl(initChunk->init_tag);
+                event_logi(VERBOSE, "setting lastInitiateTag to %x ", lastInitiateTag);
+            }
+
+        } else if (rbu_datagramContains(CHUNK_COOKIE_ECHO, chunkArray) == TRUE) {
+            if (sctpInstance != NULL) {
+                if (lastDestPort != sctpInstance->localPort || sctpInstance->localPort == 0) {
+                    /* destination port is not the listening port of this this SCTP-instance. */
+                    event_log(INTERNAL_EVENT_0,
+                              "mdi_receiveMsg: COOKIE_ECHO ignored, dest. port does not fit");
+                    sendAbort = TRUE;
+                } else {
+                    event_log(INTERNAL_EVENT_0,
+                              "mdi_receiveMsg: COOKIE_ECHO Message - processing it !");
+                }
+            } else { /* sctpInstance == NULL */
+                event_log(INTERNAL_EVENT_0,
+                         "mdi_receiveMsg: got COOKIE ECHO Message, but no instance found -> IGNORE");
+                lastFromPort = 0;
+                lastDestPort = 0;
+                lastDestAddress = NULL;
+                lastFromAddress = NULL;
+                sctpInstance = NULL;
+                currentAssociation = NULL;
+                return;
+            }
+        } else {
+            /* section 8.4.8) send an ABORT with peers veri-tag, set T-Bit */
+                event_log(INTERNAL_EVENT_0,
+                          "mdi_receiveMsg: send ABORT -> message ignored (OOTB - see section 8.4.8) ");
+                sendAbort = TRUE;
+        }
+
+
+    } else { /* i.e. if(currentAssociation != NULL) */
+
+        /* If the association exists, both ports of the message must be equal to the ports
+           of the association and the source address must be in the addresslist of the peer
+           of this association */
+        /* check src- and dest-port and source address */
+        if (lastFromPort != currentAssociation->remotePort || lastDestPort != currentAssociation->localPort) {
+            error_logiiii(ERROR_FATAL,
+                          "port mismatch in received DG (lastFromPort=%u, assoc->remotePort=%u, lastDestPort=%u, assoc->localPort=%u ",   lastFromPort, currentAssociation->remotePort,                          lastDestPort, currentAssociation->localPort);
+            currentAssociation = NULL;
+            sctpInstance = NULL;
+            lastFromAddress = NULL;
+            lastDestAddress = NULL;
+            lastFromPort = 0;
+            lastDestPort = 0;
+            return;
+        }
+
+        if (sctpInstance == NULL) {
+            sctpInstance = currentAssociation->sctpInstance;
+            if (sctpInstance == NULL) {
+                error_log(ERROR_FATAL, "We have an Association, but no Instance, FIXME !");
+            }
+        }
+
+        /* check if source address is in address list of this association.
+           tbd: check the draft if this is correct. */
+        if (sourceAddressExists == FALSE) {
+            for (i = 0; i < currentAssociation->noOfNetworks; i++) {
+                if (adl_equal_address
+                    (&(currentAssociation->destinationAddresses[i]), lastFromAddress) == TRUE) {
+                    sourceAddressExists = TRUE;
+                    break;
+                }
+            }
+        }
+
+        if (!sourceAddressExists) {
+            error_log(ERROR_MINOR,
+                      "source address of received DG is not in the destination addresslist");
+            currentAssociation = NULL;
+            sctpInstance = NULL;
+            lastFromPort = 0;
+            lastDestPort = 0;
+            lastDestAddress = NULL;
+            lastFromAddress = NULL;
+            return;
+        }
+
+        if (sourceAddressExists) lastFromPath = i;
+
+        /* check for verification tag rules --> see section 8.5 */
+        if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT)) != NULL) {
+            /* check that there is ONLY init */
+            initFound = TRUE;
+            if (lastInitiateTag != 0) {
+                currentAssociation = NULL;
+                sctpInstance = NULL;
+                lastFromPort = 0;
+                lastDestPort = 0;
+                lastDestAddress = NULL;
+                lastFromAddress = NULL;
+                event_log(VERBOSE, "mdi_receiveMsg: scan found INIT, lastInitiateTag!=0, returning");
+                return;
+            }
+            initChunk = ((SCTP_init_fixed *) & ((SCTP_init *) message->sctp_pdu)->init_fixed);
+            /* make sure, if you send an ABORT later on (i.e. when peer requests 0 streams),
+             * you pick the right tag */
+            lastInitiateTag = ntohl(initChunk->init_tag);
+            event_logi(VVERBOSE, "Got an INIT CHUNK with initiation-tag %u", lastInitiateTag);
+
+            if ((vlptr = (SCTP_vlparam_header*)rbu_scanInitChunkForParameter(initPtr, VLPARAM_HOST_NAME_ADDR)) != NULL) {
+                sendAbort = TRUE;
+            }
+        }
+        if (rbu_datagramContains(CHUNK_ABORT, chunkArray) == TRUE) {
+            /* accept my-tag or peers tag, else drop packet */
+            if ((lastInitiateTag != currentAssociation->tagLocal &&
+                 lastInitiateTag != currentAssociation->tagRemote) || initFound == TRUE) {
+                currentAssociation = NULL;
+                sctpInstance = NULL;
+                lastFromPort = 0;
+                lastDestPort = 0;
+                lastDestAddress = NULL;
+                lastFromAddress = NULL;
+                return;
+            }
+            abortFound = TRUE;
+        }
+        if (rbu_datagramContains(CHUNK_SHUTDOWN_COMPLETE, chunkArray) == TRUE) {
+            /* accept my-tag or peers tag, else drop packet */
+            /* TODO : make sure that if it is the peer's tag also T-Bit is set */
+            if ((lastInitiateTag != currentAssociation->tagLocal &&
+                 lastInitiateTag != currentAssociation->tagRemote) || initFound == TRUE) {
+                currentAssociation = NULL;
+                sctpInstance = NULL;
+                lastFromPort = 0;
+                lastDestPort = 0;
+                lastDestAddress = NULL;
+                lastFromAddress = NULL;
+                return;
+            }
+        }
+        if (rbu_datagramContains(CHUNK_SHUTDOWN_ACK, chunkArray) == TRUE) {
+            if (initFound == TRUE) {
+                currentAssociation = NULL;
+                sctpInstance = NULL;
+                lastFromPort = 0;
+                lastDestPort = 0;
+                lastDestAddress = NULL;
+                lastFromAddress = NULL;
+                return;
+            }
+            state = sci_getState();
+            if (state == COOKIE_ECHOED || state == COOKIE_WAIT) {
+                /* see also section 8.5.E.) treat this like OOTB packet */
+                event_logi(EXTERNAL_EVENT,
+                           "mdi_receive_message: shutdownAck in state %u, send SHUTDOWN_COMPLETE ! ",
+                           state);
+                shutdownCompleteCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_COMPLETE, FLAG_NO_TCB);
+                bu_put_Ctrl_Chunk(ch_chunkString(shutdownCompleteCID),NULL);
+                bu_sendAllChunks(NULL);
+                ch_deleteChunk(shutdownCompleteCID);
+                currentAssociation = NULL;
+                sctpInstance = NULL;
+                lastFromPort = 0;
+                lastDestPort = 0;
+                lastDestAddress = NULL;
+                lastFromAddress = NULL;
+                return;
+            }
+        }
+        if (rbu_datagramContains(CHUNK_COOKIE_ECHO, chunkArray) == TRUE) {
+               cookieEchoFound = TRUE;
+        }
+
+        if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT_ACK)) != NULL) {
+
+            if ((vlptr = (SCTP_vlparam_header*)rbu_scanInitChunkForParameter(initPtr, VLPARAM_HOST_NAME_ADDR)) != NULL) {
+                    /* actually, this does not make sense...anyway: kill assoc, and notify user */
+                    scu_abort(ECC_UNRECOGNIZED_PARAMS, ntohs(vlptr->param_length), (guchar*)vlptr);
+                    currentAssociation = NULL;
+                    sctpInstance = NULL;
+                    lastFromPort = 0;
+                    lastDestPort = 0;
+                    lastDestAddress = NULL;
+                    lastFromAddress = NULL;
+                    return;
+            }
+        }
+
+        if (!cookieEchoFound && !initFound && !abortFound && lastInitiateTag != currentAssociation->tagLocal) {
+            event_logii(EXTERNAL_EVENT,
+                        "Tag mismatch in receive DG, received Tag = %u, local Tag = %u -> discarding",
+                        lastInitiateTag, currentAssociation->tagLocal);
+            currentAssociation = NULL;
+            sctpInstance = NULL;
+            lastFromPort = 0;
+            lastDestPort = 0;
+            lastDestAddress = NULL;
+            lastFromAddress = NULL;
+            return;
+
+        }
+
+    }
+
+    if (sendAbort == TRUE) {
+        if (sendAbortForOOTB == FALSE) {
+            event_log(VERBOSE, "mdi_receiveMsg: sendAbortForOOTB==FALSE -> Discarding MESSAGE: not sending ABORT");
+            lastFromAddress = NULL;
+            lastDestAddress = NULL;
+            lastFromPort = 0;
+            lastDestPort = 0;
+            currentAssociation = NULL;
+            sctpInstance = NULL;
+            /* and discard that packet */
+            return;
+        }
+        /* make and send abort message */
+        if (currentAssociation == NULL) {
+            abortCID = ch_makeSimpleChunk(CHUNK_ABORT, FLAG_NO_TCB);
+        } else {
+            abortCID = ch_makeSimpleChunk(CHUNK_ABORT, FLAG_NONE);
+        }
+        bu_put_Ctrl_Chunk(ch_chunkString(abortCID),NULL);
+        /* should send it to last address */
+        bu_unlock_sender(NULL);
+        bu_sendAllChunks(NULL);
+        /* free abort chunk */
+        ch_deleteChunk(abortCID);
+        /* send an ABORT with peers veri-tag, set T-Bit */
+        event_log(VERBOSE, "mdi_receiveMsg: sending ABORT with T-Bit");
+        lastFromAddress = NULL;
+        lastDestAddress = NULL;
+        lastFromPort = 0;
+        lastDestPort = 0;
+        currentAssociation = NULL;
+        sctpInstance = NULL;
+        /* and discard that packet */
+        return;
+    }
+
+    /* forward DG to bundling */
+    rbu_rcvDatagram(lastFromPath, message->sctp_pdu, bufferLength - sizeof(SCTP_common_header));
+
+    lastInitiateTag = 0;
+    currentAssociation = NULL;
+    sctpInstance = NULL;
+    lastDestAddress = NULL;
+    lastFromAddress = NULL;
+    lastFromPath = -1;          /* only valid for functions called via mdi_receiveMessage */
+
+} /* end: mdi_receiveMessageAtRing */
+
 
 
 
@@ -1892,17 +2483,20 @@ sctp_registerInstance(unsigned short port,
          if (!adl_rscb_code)
              error_log(ERROR_FATAL, "registration of IPv4 socket call back function failed");
     }
-	if(with_ipv4 && sctp_rring == NULL && sctp_rring1 ==NULL && sctp_sring ==NULL && sctp_sring1 == NULL)
+	if(with_ipv4 && sctp_rring == NULL && sctp_rring1 ==NULL && sctp_sring ==NULL && sctp_sring1 == NULL && sctp_message_pool == NULL)
 	{
 		sctp_rring = (struct rte_ring*)malloc(sizeof(struct rte_ring));
 		sctp_rring1 = (struct rte_ring*)malloc(sizeof(struct rte_ring));
 		sctp_sring = (struct rte_ring*)malloc(sizeof(struct rte_ring));
 		sctp_sring1 = (struct rte_ring*)malloc(sizeof(struct rte_ring));
-		if(sctp_rring == NULL || sctp_rring1 == NULL || sctp_sring == NULL || sctp_sring1 == NULL)
+		sctp_message_pool = (struct rte_mempool*)malloc(sizeof(struct rte_mempool));
+		if(sctp_rring == NULL || sctp_rring1 == NULL || sctp_sring == NULL || sctp_sring1 == NULL || sctp_message_pool == NULL) 
 		  error_log(ERROR_FATAL, "sctp: alloc memory for rings failed.\n");
-		adl_get_sctp_rings(sctp_rring, sctp_rring1, sctp_sring, sctp_sring1);
+		adl_get_sctp_rings(sctp_rring, sctp_rring1, sctp_sring, sctp_sring1, sctp_message_pool);
 		if(sctp_rring == NULL || sctp_rring1 == NULL || sctp_sring == NULL || sctp_sring1 == NULL)
 			error_log(ERROR_FATAL, "sctp rings create falied\n");
+		printf("!!!!sctp(%s, %s, %s, %s, %s)\n", sctp_rring->name, sctp_rring1->name, sctp_sring->name, sctp_sring1->name, sctp_message_pool->name);
+		adl_register_rings_cb(sctp_rring, sctp_rring1, sctp_sring, sctp_sring1, &mdi_dummy_callback);
 	}
     if (with_ipv4 == TRUE) {
         ipv4_users++;

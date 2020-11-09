@@ -51,6 +51,8 @@
 #include  "globals.h"           /* for public association data structure */
 #include  "messages.h"
 
+#include <rte_ring.h>
+
 /* define some important constants */
 #define ASSOCIATION_MAX_RETRANS 10
 #define MAX_INIT_RETRANSMITS    8
@@ -94,6 +96,10 @@
  *  @param portnum            bogus port number
  */
 void mdi_receiveMessage(gint socket_fd, unsigned char *buffer,
+                   int bufferLength, union sockunion * source_addr,
+                   union sockunion * dest_addr);
+
+void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer,
                    int bufferLength, union sockunion * source_addr,
                    union sockunion * dest_addr);
 
