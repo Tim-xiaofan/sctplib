@@ -20,8 +20,8 @@ int dpdk_ops(int argc, char *argv[])
 		printf("argv == NULL");
 		return -1;
 	}
-	for(i=0; i < argc; i++)
-		printf("%s\n", argv[i]);
+	//for(i=0; i < argc; i++)
+	//	printf("%s\n", argv[i]);
 	ret = rte_eal_init(argc, argv);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Cannot init EAL\n");

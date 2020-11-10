@@ -43,6 +43,7 @@
 
 #include "adaptation.h"
 #include "timer_list.h"
+#include "zlog.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -742,19 +743,16 @@ gint adl_get_sctpv4_socket(void)
 /**/
 void adl_get_sctp_rings(struct rte_ring *rr, struct rte_ring *rr1, struct rte_ring *sr, struct rte_ring *sr1, struct rte_mempool *mp)
 {
-	printf("!!!!!!enter adl_get_sctp_rings.\n");
 	if (adl_recv_ring == NULL || adl_recv_ring1 == NULL || adl_send_ring == NULL || adl_send_ring1 == NULL)
 	{
 		printf("adl_get_sctp_rings:ring == NULL\n");
 		exit(-1);
 	}
-	printf("!!!!!(%s, %s, %s, %s)\n", adl_recv_ring->name, adl_recv_ring1->name, adl_send_ring->name, adl_send_ring1->name);
 	memcpy(rr, adl_recv_ring, sizeof(struct rte_ring));
 	memcpy(rr1, adl_recv_ring1, sizeof(struct rte_ring));
 	memcpy(sr, adl_send_ring, sizeof(struct rte_ring));
 	memcpy(sr1, adl_send_ring1, sizeof(struct rte_ring));
 	memcpy(mp, adl_message_pool, sizeof(struct rte_mempool));
-	printf("!!!!!rr(%s, %s, %s, %s, %s)\n", rr->name, rr1->name, sr->name, sr1->name, mp->name);
 }
 
 #ifdef HAVE_IPV6
@@ -1355,7 +1353,7 @@ int adl_get_message(int sfd, void *dest, int maxlen, union sockunion *from, sock
 	return len;
 }
 /*int sfd, void *dest, int maxlen, union sockunion *from, union sockunion *to)*/
-int adl_dequeue_message(struct rte_ring *recv_ring, void* dest, int maxlen, union sockunion *from, union sockunion *to)
+int adl_recvfrom_ring(struct rte_ring *recv_ring, void* dest, int maxlen, union sockunion *from, union sockunion *to)
 {
 	int len;
 	void *msg;
@@ -1363,16 +1361,20 @@ int adl_dequeue_message(struct rte_ring *recv_ring, void* dest, int maxlen, unio
 		return -1;
 	if (msg == NULL)
 		return -1;
-	len = *((int *)msg) - 14;
-	printf("recv from ring'%s': len = %d\n", recv_ring->name, len);
-	/*去掉以太网头*/
-	if(len > 0)rte_memcpy(dest, (char *)msg + sizeof(int) + 14, len);
-	rte_mempool_put(adl_message_pool, msg);
+	len = *((int *)msg);
+	//zlog_data((unsigned char*)msg + sizeof(int), len);
+	if(len < 14)
+	{
+		rte_mempool_put(adl_message_pool, msg);
+		error_log(ERROR_FATAL, "not ether");
+	}
 	if(len < 20)
+	{
+		rte_mempool_put(adl_message_pool, msg);
 		error_log(ERROR_FATAL, "not ip");
-	
-	if(len < 0)
-		return -1;
+	}
+	len -= 14;/*去掉以太网头*/
+	rte_memcpy(dest, (char*)msg + sizeof(int) + 14, len);
 	/*解析IP头*/
 	struct iphdr *iph;
 	if ((dest == NULL) || (from == NULL) || (to == NULL))
@@ -1380,10 +1382,10 @@ int adl_dequeue_message(struct rte_ring *recv_ring, void* dest, int maxlen, unio
 	iph = (struct iphdr *)dest;
 	to->sa.sa_family = AF_INET;
 	to->sin.sin_port = htons(0);
-	to->sin.sin_addr.s_addr = iph->daddr;
+	to->sin.sin_addr.s_addr = iph->daddr;/*设置目的地址*/
 	from->sa.sa_family = AF_INET;
 	from->sin.sin_port = htons(0);
-	from->sin.sin_addr.s_addr = iph->saddr;
+	from->sin.sin_addr.s_addr = iph->saddr;/*设置协议簇*/
 	return len;
 }
 
@@ -1405,7 +1407,7 @@ int dispatch_rings()
 			m_ring = adl_recv_ring1;
 		if(i==0 && rte_ring_count(m_ring) > 0)
 		{
-			length = adl_dequeue_message(m_ring, r_rbuf, MAX_MTU_SIZE, &src, &dest);
+			length = adl_recvfrom_ring(m_ring, r_rbuf, MAX_MTU_SIZE, &src, &dest);
 			if (length < 0)
 				if (length < 0)
 					break;
@@ -1415,7 +1417,7 @@ int dispatch_rings()
 				src_in = (struct sockaddr_in *)&src;
 				event_logi(VERBOSE, "IPv4/SCTP-Message from %s -> activating callback",
 						   inet_ntoa(src_in->sin_addr));
-				iph = (struct iphdr *)rbuf;
+				iph = (struct iphdr *)r_rbuf;
 				hlen = iph->ihl << 2;
 				if (length < hlen)
 				{
@@ -1425,7 +1427,9 @@ int dispatch_rings()
 				}
 				else
 				{
+					//zlog_data(r_rbuf, length);
 					length -= hlen;
+					//printf("iph_len == %d\n", hlen);
 					mdi_receiveMessageAtRing(m_ring, &r_rbuf[hlen], length, &src, &dest);
 				}
 				break;
@@ -1435,6 +1439,7 @@ int dispatch_rings()
 			}
 		}
 	}
+	return 1;
 }
 
 /**
@@ -2034,7 +2039,7 @@ int adl_init_adaptation_layer(int *myRwnd, int argc, char *argv[])
 	printf("(%s, %s, %s, %s, %s)\n", adl_recv_ring->name, adl_recv_ring1->name, adl_send_ring->name, adl_send_ring1->name, adl_message_pool->name);
 	if (adl_recv_ring == NULL || adl_recv_ring1 == NULL || adl_send_ring == NULL || adl_send_ring1 == NULL)
 	{
-		printf("adl_init: rings == NULL on creat\n");
+		error_log(ERROR_FATAL, "create ring failed!");
 		exit(-1);
 	}
 	/* set a safe default */

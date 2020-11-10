@@ -137,7 +137,7 @@ am_libsctplib_la_OBJECTS = adaptation.lo auxiliary.lo chunkHandler.lo \
 	distribution.lo errorhandler.lo flowcontrol.lo globals.lo \
 	md5.lo pathmanagement.lo rbundling.lo recvctrl.lo \
 	reltransfer.lo sbundling.lo streamengine.lo timer_list.lo \
-	SCTP-control.lo dpdk_ops.lo
+	SCTP-control.lo dpdk_ops.lo zlog.lo
 libsctplib_la_OBJECTS = $(am_libsctplib_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -169,7 +169,8 @@ am__depfiles_remade = ./$(DEPDIR)/SCTP-control.Plo \
 	./$(DEPDIR)/md5.Plo ./$(DEPDIR)/pathmanagement.Plo \
 	./$(DEPDIR)/rbundling.Plo ./$(DEPDIR)/recvctrl.Plo \
 	./$(DEPDIR)/reltransfer.Plo ./$(DEPDIR)/sbundling.Plo \
-	./$(DEPDIR)/streamengine.Plo ./$(DEPDIR)/timer_list.Plo
+	./$(DEPDIR)/streamengine.Plo ./$(DEPDIR)/timer_list.Plo \
+	./$(DEPDIR)/zlog.Plo
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
@@ -372,7 +373,8 @@ libsctplib_la_SOURCES = adaptation.c adaptation.h \
                          streamengine.c streamengine.h \
                          timer_list.c timer_list.h \
                          SCTP-control.c SCTP-control.h \
-						 dpdk_ops.c dpdk_ops.h
+						 dpdk_ops.c dpdk_ops.h \
+						 zlog.c zlog.h
 
 include_HEADERS = sctp.h
 libsctplib_la_LIBADD = @glib_LIBS@ \
@@ -477,6 +479,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sbundling.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/streamengine.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/timer_list.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/zlog.Plo@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -677,6 +680,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/sbundling.Plo
 	-rm -f ./$(DEPDIR)/streamengine.Plo
 	-rm -f ./$(DEPDIR)/timer_list.Plo
+	-rm -f ./$(DEPDIR)/zlog.Plo
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -739,6 +743,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/sbundling.Plo
 	-rm -f ./$(DEPDIR)/streamengine.Plo
 	-rm -f ./$(DEPDIR)/timer_list.Plo
+	-rm -f ./$(DEPDIR)/zlog.Plo
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 

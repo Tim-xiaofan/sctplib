@@ -55,6 +55,7 @@
 #include  "flowcontrol.h"       /* interfaces to flowcontrol */
 #include  "recvctrl.h"          /* interfaces to receive-controller */
 #include  "chunkHandler.h"
+#include  "zlog.h"
 
 #include  <sys/types.h>
 #include  <errno.h>
@@ -1477,7 +1478,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
     lastFromPath = 0;
 
     message = (SCTP_message *) buffer;
-
+	//zlog_data(buffer, bufferLength);
     if (!validate_datagram(buffer, bufferLength)) {
         event_log(INTERNAL_EVENT_0, "received corrupted datagramm");
         lastFromAddress = NULL;
@@ -2021,6 +2022,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
     }
 
     /* forward DG to bundling */
+	printf("enter rbu_rcvDatagram\n");
     rbu_rcvDatagram(lastFromPath, message->sctp_pdu, bufferLength - sizeof(SCTP_common_header));
 
     lastInitiateTag = 0;
@@ -2495,7 +2497,6 @@ sctp_registerInstance(unsigned short port,
 		adl_get_sctp_rings(sctp_rring, sctp_rring1, sctp_sring, sctp_sring1, sctp_message_pool);
 		if(sctp_rring == NULL || sctp_rring1 == NULL || sctp_sring == NULL || sctp_sring1 == NULL)
 			error_log(ERROR_FATAL, "sctp rings create falied\n");
-		printf("!!!!sctp(%s, %s, %s, %s, %s)\n", sctp_rring->name, sctp_rring1->name, sctp_sring->name, sctp_sring1->name, sctp_message_pool->name);
 		adl_register_rings_cb(sctp_rring, sctp_rring1, sctp_sring, sctp_sring1, &mdi_dummy_callback);
 	}
     if (with_ipv4 == TRUE) {

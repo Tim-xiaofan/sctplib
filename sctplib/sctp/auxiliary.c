@@ -45,6 +45,7 @@
 #include "globals.h"
 #include "sctp.h"
 #include "adaptation.h"
+#include "zlog.h"
 
 #include <stdio.h>
 
@@ -258,9 +259,15 @@ static int insert_crc32(unsigned char *buffer, int length)
 int validate_size(unsigned char *header_start, int length)
 {
     if ((length % 4) != 0L)
-        return 0;
+    {
+        event_log(INTERNAL_EVENT_0, "length % 4 != 0");
+		return 0;
+	}
     if (length > NMAX  || length < NMIN)
+	{
+		event_log(INTERNAL_EVENT_0, "length > NMAX  || length < NMIN");
         return 0;
+	}
     return 1;
 }
 
@@ -313,9 +320,15 @@ int validate_datagram(unsigned char *buffer, int length)
 {
     /* sanity check for size (min,max, multiple of 32 bits) */
     if (!validate_size(buffer, length))
-        return 0;
+	{
+        event_log(INTERNAL_EVENT_0, "invalid size");
+		return 0;
+	}
     if (!(*validate_checksum)(buffer, length))
+	{
+		event_log(INTERNAL_EVENT_0, "invalid checksum");
         return 0;
+	}
     /* FIXME :  validation is not yet complete */
     return 1;
 }

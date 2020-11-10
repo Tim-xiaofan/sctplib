@@ -19,7 +19,8 @@ libsctplib_la_SOURCES  = adaptation.c adaptation.h \
                          streamengine.c streamengine.h \
                          timer_list.c timer_list.h \
                          SCTP-control.c SCTP-control.h \
-						 dpdk_ops.c dpdk_ops.h
+						 dpdk_ops.c dpdk_ops.h \
+						 zlog.c zlog.h
 
 include_HEADERS        = sctp.h
 libsctplib_la_LIBADD   = @glib_LIBS@ \
