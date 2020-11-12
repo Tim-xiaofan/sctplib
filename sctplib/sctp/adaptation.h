@@ -99,7 +99,16 @@ void adl_get_sctp_rings(struct rte_ring* rr, struct rte_ring* rr1, struct rte_ri
 gint adl_get_sctpv6_socket(void);
 #endif
 
-
+/**
+ * function to be called when we get a message from a peer sctp instance in the poll loop
+ * @param  sr the dpdk ring where data can be read...
+ * @param  buf pointer to a buffer, where we data is stored
+ * @param  len number of bytes to be sent, including the ip header !
+ * @param  address, where data goes from
+ * @param	dest_len size of the address
+ * @return returns number of bytes actually sent, or error
+ */
+int adl_send_message_ring(struct rte_ring* sr, void *buf, int len, union sockunion *dest, unsigned char tos); 
 /**
  * function to be called when we get a message from a peer sctp instance in the poll loop
  * @param  sfd the socket file descriptor where data can be read...

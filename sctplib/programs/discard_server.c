@@ -55,7 +55,7 @@
 
 #include "sctp_wrapper.h"
 
-#define DISCARD_PORT                          9
+#define DISCARD_PORT                          2905
 #define MAXIMUM_NUMBER_OF_LOCAL_ADDRESSES    10
 #define MAXIMUM_PAYLOAD_LENGTH             8192
 #define MAXIMUM_NUMBER_OF_IN_STREAMS         17
@@ -450,6 +450,7 @@ int main(int argc, char **argv)
 	SCTP_setLibraryParameters(&params);
 
 	/* set up the "server" 调用F2，把F3集合作为参数传递给F2*/
+	//localAddressList[noOfLocalAddresses][]
 	printf("noOfLocalAddresses = %d\n", noOfLocalAddresses);
 	sctpInstance = SCTP_registerInstance(DISCARD_PORT,
 			MAXIMUM_NUMBER_OF_IN_STREAMS, MAXIMUM_NUMBER_OF_OUT_STREAMS,

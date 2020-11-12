@@ -1,0 +1,205 @@
+test
+18:14:31.560 - Event in Module: distribution.c............
+18:14:31.560 - sctp_initLibrary called
+18:14:31.560 - Event in Module: adaptation.c............
+18:14:31.560 - receive buffer size initially is : 212992
+18:14:31.560 - Event in Module: adaptation.c............
+18:14:31.560 - set receive buffer size to : 655350 bytes
+18:14:31.560 - Event in Module: adaptation.c............
+18:14:31.560 - receive buffer size finally is : 425984
+18:14:31.560 - Event in Module: adaptation.c............
+18:14:31.560 - Created raw socket 3 with options
+
+EAL: Probing VFIO support...
+EAL: VFIO support initialized
+EAL: PCI device 0000:00:03.0 on NUMA socket -1
+EAL:   Invalid NUMA socket, default to 0
+EAL:   probe driver: 8086:100e net_e1000_em
+EAL: PCI device 0000:00:08.0 on NUMA socket -1
+EAL:   Invalid NUMA socket, default to 0
+EAL:   probe driver: 8086:100f net_e1000_em
+EAL: PCI device 0000:00:09.0 on NUMA socket -1
+EAL:   Invalid NUMA socket, default to 0
+EAL:   probe driver: 8086:100f net_e1000_em
+EAL: PCI device 0000:00:0a.0 on NUMA socket -1
+EAL:   Invalid NUMA socket, default to 0
+EAL:   probe driver: 8086:100f net_e1000_em
+Finished Process EAL Init.
+(DPDK_2_MSFW, DPDK_2_MSFW1, MSFW_2_DPDK, MSFW_2_DPDK1, MSG_POOL)
+18:14:38.800 - Event in Module: adaptation.c............
+18:14:38.800 - receive buffer size is : 212992
+18:14:38.800 - Event in Module: adaptation.c............
+18:14:38.800 - Created raw socket 34 with options
+
+18:14:38.801 - Found additional 3 v6 addresses, total now 5
+
+18:14:38.801 - At least I found the local IPV6 address !
+18:14:38.801 - copied the local IPV6 address 1000000:0:0:0, family a
+18:14:38.801 - Interface 0, NAME lo, Hex: 3b6ba030
+18:14:38.801 - Interface 0, MTU 65536
+18:14:38.801 - we are talking about the address 127.0.0.1
+18:14:38.801 - Trying IPV4 address
+18:14:38.801 - Starting checking for duplicates ! MTU = 65536, nets: 1
+18:14:38.801 - duplicates loop xxx=0
+18:14:38.801 - Copying 16 bytes
+18:14:38.801 - Setting Family
+18:14:38.801 - Interface 0, Number of Nets: 2
+18:14:38.801 - Interface 1, NAME enp0s3, Hex: 3b6ba030
+18:14:38.801 - Interface 1, MTU 1500
+18:14:38.801 - we are talking about the address 10.10.0.54
+18:14:38.801 - Trying IPV4 address
+18:14:38.801 - Starting checking for duplicates ! MTU = 1500, nets: 2
+18:14:38.801 - duplicates loop xxx=0
+18:14:38.801 - duplicates loop xxx=1
+18:14:38.801 - Copying 16 bytes
+18:14:38.801 - Setting Family
+18:14:38.801 - Interface 1, Number of Nets: 3
+18:14:38.801 - adl_gatherLocalAddresses: Found 3 addresses
+18:14:38.801 - adl_gatherAddresses : Address 0: ::1
+18:14:38.801 - adl_gatherAddresses : Address 1: 127.0.0.1
+18:14:38.801 - adl_gatherAddresses : Address 2: 10.10.0.54
+opt = 127.0.0.1
+test1
+18:14:38.801 - sctp_getLibraryParameters: Parameter sendAbortForOOTB is currently TRUE
+18:14:38.801 - Event in Module: distribution.c............
+18:14:38.801 - sctp_getLibraryParameters: Checksum Algorithm is currently CRC32C
+18:14:38.801 - sctp_setLibraryParameters: Parameter sendAbortForOOTB is TRUE
+18:14:38.801 - Event in Module: distribution.c............
+18:14:38.801 - sctp_setLibraryParameters: Set Parameter sendAbortForOOTB to TRUE
+18:14:38.801 - Event in Module: distribution.c............
+18:14:38.801 - sctp_setLibraryParameters: Checksum Algorithm is now CRC32C
+18:14:38.801 - Event in Module: distribution.c............
+18:14:38.801 - sctp_setLibraryParameters: Support of PRSCTP is now ENABLED
+18:14:38.801 - Event in Module: distribution.c............
+18:14:38.801 - sctp_setLibraryParameters: Support of ADDIP is now DISABLED
+noOfLocalAddresses = 1
+18:14:38.801 - Event in Module: distribution.c............
+18:14:38.801 - sctp_registerInstance called
+18:14:38.801 - sctp_registerInstance : with_ipv4 : TRUE 
+18:14:38.801 - sctp_registerInstance : with_ipv6: FALSE 
+18:14:38.801 - Found additional 3 v6 addresses, total now 5
+
+18:14:38.801 - At least I found the local IPV6 address !
+18:14:38.801 - copied the local IPV6 address 1000000:0:0:0, family a
+18:14:38.801 - Interface 0, NAME lo, Hex: 3b6b9ed0
+18:14:38.801 - Interface 0, MTU 65536
+18:14:38.801 - we are talking about the address 127.0.0.1
+18:14:38.801 - Trying IPV4 address
+18:14:38.801 - Starting checking for duplicates ! MTU = 65536, nets: 1
+18:14:38.801 - duplicates loop xxx=0
+18:14:38.801 - Copying 16 bytes
+18:14:38.801 - Setting Family
+18:14:38.801 - Interface 0, Number of Nets: 2
+18:14:38.801 - Interface 1, NAME enp0s3, Hex: 3b6b9ed0
+18:14:38.801 - Interface 1, MTU 1500
+18:14:38.801 - we are talking about the address 10.10.0.54
+18:14:38.801 - Trying IPV4 address
+18:14:38.801 - Starting checking for duplicates ! MTU = 1500, nets: 2
+18:14:38.801 - duplicates loop xxx=0
+18:14:38.801 - duplicates loop xxx=1
+18:14:38.801 - Copying 16 bytes
+18:14:38.801 - Setting Family
+18:14:38.801 - Interface 1, Number of Nets: 3
+18:14:38.801 - adl_gatherLocalAddresses: Found 3 addresses
+18:14:38.801 - adl_gatherAddresses : Address 0: ::1
+18:14:38.801 - adl_gatherAddresses : Address 1: 127.0.0.1
+18:14:38.801 - adl_gatherAddresses : Address 2: 10.10.0.54
+18:14:38.801 - Event in Module: distribution.c............
+18:14:38.801 - retrieving instance 1 from list
+18:14:38.801 - Event in Module: distribution.c............
+18:14:38.801 - instance 1 not in list
+18:14:38.801 - sctp_getInstanceParams: Instance 1
+18:14:38.801 - sctp_setInstanceParams: Instance 1
+18:14:38.803 - IPv4/SCTP-Message from 10.0.0.113 -> activating callback
+
+
+-------enter mdi_receiveMessageAtRing-------
+2a f9 0b 59 00 00 00 00 - ac 53 78 71 01 00 00 34
+c1 e1 9d 3a 00 01 a0 00 - 00 40 00 40 c2 b0 6e b7
+00 05 00 08 0a 00 00 71 - 00 05 00 08 c0 a8 7a 01
+00 0c 00 06 00 05 00 00 - 80 00 00 04 c0 00 00 04
+
+18:14:38.803 - DEBUG Validation : old crc32c == ac537871
+18:14:38.803 - DEBUG Validation : my crc32c == ac537871
+18:14:38.803 - mdi_receiveMessageAtRing: checking for correct IPV4 addresses
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - mdi_receiveMessageAtRing : len 64, sourceaddress : 10.0.0.113, src_port 11001,dest: 10.64.0.118, dest_port 2905
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - Looking for IPv4 Address 7100000a (in NBO)
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - retrieving association by transport address from list
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - association indexed by transport address not in list
+18:14:38.803 - DEBUG: CheckForNotingInInstance, comparing instance a port 2905, instance b port 2905
+18:14:38.803 - Found an SCTP Instance for Port 2905 and Address in the list, types: 1 !
+18:14:38.803 - rbu_scanPDU : len==52, processed_len == 0
+18:14:38.803 - rbu_scanPDU : Chunk type==1, result == 2
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findChunk : len==52, processed_len == 0
+18:14:38.803 - mdi_receiveMsgAtRing: Looking for source address in INIT CHUNK
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findAddress : len==52, processed_len == 20
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - Looking for IPv4 Address 7100000a (in NBO)
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - retrieving association by transport address from list
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - association indexed by transport address not in list
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findAddress : len==52, processed_len == 20
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findAddress : len==52, processed_len == 28
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - Looking for IPv4 Address 17aa8c0 (in NBO)
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - retrieving association by transport address from list
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - association indexed by transport address not in list
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findAddress : len==52, processed_len == 20
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findAddress : len==52, processed_len == 28
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findAddress : len==52, processed_len == 36
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findAddress : len==52, processed_len == 44
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findAddress : len==52, processed_len == 48
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findChunk : len==52, processed_len == 0
+18:14:38.803 - mdi_receiveMsg: found NO association from INIT (ACK) CHUNK
+18:14:38.803 - mdi_receiveMsgAtRing: currentAssociation==NULL, start scanning !
+18:14:38.803 - rbu_scanDatagramForError : len==52, processed_len == 0
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_findChunk : len==52, processed_len == 0
+18:14:38.803 - Event in Module: distribution.c............
+18:14:38.803 - mdi_receiveMsg: INIT Message - processing it !
+18:14:38.803 - setting lastInitiateTag to c1e19d3a 
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_scanInitChunkForParameter : len==52, processed_len == 20
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_scanInitChunkForParameter : len==52, processed_len == 28
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_scanInitChunkForParameter : len==52, processed_len == 36
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_scanInitChunkForParameter : len==52, processed_len == 44
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_scanInitChunkForParameter : len==52, processed_len == 48
+enter rbu_rcvDatagram
+18:14:38.803 - bu_lock_sender() was called... 
+18:14:38.803 - Setting global bundling buffer 
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - Entered rbu_rcvDatagram()...... 
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - rbu_rcvDatagram(address=0) : len==52, processed_len = 0, chunk_len=52
+got a INIT_CHUNK
+18:14:38.803 - Event in Module: rbundling.c............
+18:14:38.803 - *******************  Bundling received INIT chunk
+18:14:38.803 - Event in Module: SCTP-control.c............
+18:14:38.803 - sctlr_init() is executed
+18:14:38.803 - Event in Module: chunkHandler.c............
+18:14:38.803 - created chunk from string 1 
+18:14:38.803 -  DO_5_1_B_INIT: Normal init case 
+18:14:38.803 - mdi_readLocalInStreams(): Searching for SCTP Instance with Port 2905 
+18:14:38.803 - DEBUG: CheckForAddressInInstance, comparing instance a port 2905, instance b port 2905
+18:14:38.803 - DEBUG: CheckForAddressInInstance, acount 0, bcount 0, found = FALSE

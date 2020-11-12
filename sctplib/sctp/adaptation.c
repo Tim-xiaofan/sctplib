@@ -98,6 +98,7 @@ struct ip
 
 #if defined(LINUX)
 #define LINUX_PROC_IPV6_FILE "/proc/net/if_inet6"
+#define MY_IPV4_FILE "./ipv4"
 #include <asm/types.h>
 #include <linux/rtnetlink.h>
 #else /* this may not be okay for SOLARIS !!! */
@@ -879,6 +880,40 @@ int adl_sendUdpData(int sfd, unsigned char *buf, int length,
 	return result;
 }
 
+int adl_send_message_ring(struct rte_ring* sr, void *buf, int len, union sockunion *dest, unsigned char tos) 
+{
+	int txmt_len = 0, ret = -1;
+	//unsigned char old_tos;
+	switch (sockunion_family(dest))
+	{
+		case AF_INET:
+			number_of_sendevents++;
+			event_logiiii(VERBOSE,
+						"AF_INET : adl_send_message_ring : ring : %s, len %d, destination : %s, send_events %u",
+						sr->name, len, inet_ntoa(dest->sin.sin_addr), number_of_sendevents);
+			void *msg = NULL;
+			ret = rte_mempool_get(adl_message_pool, &msg);
+			if(ret < 0)
+				error_logi(ERROR_MAJOR, "AF_INT: rte_mempool_get err='%s'", strerror(0 - ret));
+			if(msg == NULL)
+				error_logi(ERROR_MAJOR, "AF_INT: rte_mempool_get err='%s'", "msg==NULL");
+			rte_memcpy(msg, &len, sizeof(int));
+			rte_memcpy((char*)msg + sizeof(int), buf, len);
+			if((ret = rte_ring_enqueue(sr, msg)) < 0)
+			{
+				error_logi(ERROR_MAJOR, "AF_INET : rte_ring_enqueue err='%s'", "no buffs in ring");
+				rte_mempool_put(adl_message_pool, msg);
+				txmt_len = -1;
+			}
+			break;
+		default:
+			error_logi(ERROR_MAJOR,
+						"adl_send_message : Adress Family %d not supported here",
+						sockunion_family(dest));
+			txmt_len = -1;
+	}
+	return txmt_len;
+}
 /**
 	 * function to be called when library sends a message on an SCTP socket
 	 * @param  sfd the socket file descriptor where data will be sent
@@ -1399,7 +1434,7 @@ int dispatch_rings()
 
 	int i = 0;
 	struct rte_ring *m_ring = NULL;
-	for(i = 0; i < 2; i++)
+	for(i = 0; i < 2; i++)/*轮询两个接收ring*/
 	{
 		if(i == 0)
 			m_ring = adl_recv_ring;
@@ -2440,30 +2475,28 @@ gboolean adl_filterInetAddress(union sockunion *newAddress, AddressScopingFlags 
 	return TRUE;
 }
 
-/*
-							 * this is an ugly part to code, so it was taken an adapted from the
-							 * SCTP reference implementation by Randy Stewart
-							 * see http://www.sctp.org
-							 * returns TRUE is successful, else FALSE
-							 *
-							 * Changed by Stefan Jansen <stefan.jansen@gmx.de>, Aug 1st, 2002.
-							 * When going through the ifreq array, numAlocAddr was used as upper bound.
-							 * But at this time numAlocAddr counts also IPv6 addresses from
-							 * /proc/net/if_inet6 and is therefore too much. Thus I introduced a new
-							 * counter named numAlocIPv4Addr.
-							 * This error lead to a kernel error message because the kernel tried to load
-							 * a kernel module when the non-existing network devices were accessed on
-							 * SuSE Linux 7.3, kernel 2.4.16-4GB, GCC 2.95.3, glibc-2.2.4-64.
-							 *
-							 * Changed by Amedeo Bonfiglio <amedeo.bonfiglio@rcm.inet.it>, Dec 07 th, 2009.
-							 * When porting to Neutrino RTOS 6.4.1, ioctl(sctp_fd, SIOCGIFCONF) has been adapted
-							 * as shown in
-							 * http://www.qnx.com/developers/docs/6.4.0/io-pkt_en/user_guide/migrating.html#Coexistence
-							 * The modifications are controlled by #ifdef NEUTRINO_RTOS, but the modified code is applicable
-							 * to any OS.
-							 *
-							 */
-gboolean adl_gatherLocalAddresses(union sockunion **addresses,
+/** this is an ugly part to code, so it was taken an adapted from the
+ * SCTP reference implementation by Randy Stewart
+ * see http://www.sctp.org
+ * returns TRUE is successful, else FALSE
+ *
+ * Changed by Stefan Jansen <stefan.jansen@gmx.de>, Aug 1st, 2002.
+ * When going through the ifreq array, numAlocAddr was used as upper bound(上界).
+ * But at this time numAlocAddr counts also IPv6 addresses from
+ * /proc/net/if_inet6 and is therefore too much. Thus I introduced a new
+ * counter named numAlocIPv4Addr.
+ * This error lead to a kernel error message because the kernel tried to load
+ * a kernel module when the non-existing network devices were accessed on
+ * SuSE Linux 7.3, kernel 2.4.16-4GB, GCC 2.95.3, glibc-2.2.4-64.
+ *
+ * Changed by Amedeo Bonfiglio <amedeo.bonfiglio@rcm.inet.it>, Dec 07 th, 2009.
+ * When porting to Neutrino RTOS 6.4.1, ioctl(sctp_fd, SIOCGIFCONF) has been adapted
+ * as shown in
+ * http://www.qnx.com/developers/docs/6.4.0/io-pkt_en/user_guide/migrating.html#Coexistence
+ * The modifications are controlled by #ifdef NEUTRINO_RTOS, but the modified code is applicable
+ * to any OS.
+ **/
+ gboolean adl_gatherLocalAddresses(union sockunion **addresses,
 								  int *numberOfNets,
 								  int sctp_fd,
 								  gboolean with_ipv6,
@@ -2582,16 +2615,17 @@ gboolean adl_gatherLocalAddresses(union sockunion **addresses,
 	int addedNets;
 	char addrBuffer[256];
 	FILE *v6list;
+	//FILE *m_v4list;
 	struct sockaddr_in6 sin6;
 	int numAlocIPv4Addr = 0;
-#endif
+#endif /*end #ifdef win32*/
 
 	char addrBuffer2[64];
 	/* unsigned short intf_flags; */
 	struct ifconf cf;
 	int pos = 0, copSiz = 0, numAlocAddr = 0, ii;
 	char buffer[8192];
-	struct sockaddr *toUse;
+	struct sockaddr *toUse;/*暂存会被使用的地址，地址来之stcruct ifreq*/
 	int saveMTU = 1500; /* default maximum MTU for now */
 #ifdef HAS_SIOCGLIFADDR
 	struct if_laddrreq lifaddr;
@@ -2675,13 +2709,13 @@ gboolean adl_gatherLocalAddresses(union sockunion **addresses,
 	/* Now we go through and pull each one */
 
 #if defined(LINUX)
-	v6list = fopen(LINUX_PROC_IPV6_FILE, "r");
+	v6list = fopen(LINUX_PROC_IPV6_FILE, "r");/*本机IPv6地址*/
 	if (v6list != NULL)
 	{
 		memset((char *)&sin6, 0, sizeof(sin6));
 		sin6.sin6_family = AF_INET6;
 
-		while (fgets(addrBuffer, sizeof(addrBuffer), v6list) != NULL)
+		while (fgets(addrBuffer, sizeof(addrBuffer), v6list) != NULL)/*从文件读出ipv6地址*/
 		{
 			if (strncmp(addrBuffer, "00000000000000000000000000000001", 32) == 0)
 			{
@@ -2735,7 +2769,7 @@ gboolean adl_gatherLocalAddresses(union sockunion **addresses,
 	ifrequest = (struct ifreq *)&buffer[pos];
 
 #if defined(LINUX)
-	for (ii = 0; ii < numAlocIPv4Addr; ii++, ifrequest = nextif)
+	for (ii = 0; ii < numAlocIPv4Addr; ii++, ifrequest = nextif)/*loop start:扫描所有接口，如果有地址，保存地址*/
 	{
 #else
 	for (ii = 0; ii < numAlocAddr; ii++, ifrequest = nextif)
@@ -2845,7 +2879,7 @@ gboolean adl_gatherLocalAddresses(union sockunion **addresses,
 		{
 			tmp = *numberOfNets;
 			dup = 0;
-			/* scan for the dup */
+			/* scan for the dup 检查重复*/
 			for (xxx = 0; xxx < tmp; xxx++)
 			{
 				event_logi(VERBOSE, "duplicates loop xxx=%d", xxx);
@@ -2893,8 +2927,25 @@ gboolean adl_gatherLocalAddresses(union sockunion **addresses,
 #endif
 		(*numberOfNets)++;
 		event_logii(VERBOSE, "Interface %d, Number of Nets: %d", ii, *numberOfNets);
-	}
-
+	}/*loop end*/
+//	m_v4list = fopen(MY_IPV4_FILE, "r");/*而外的ip地址*/
+//	if(m_v4list == NULL)
+//	{
+//		event_logii(VERBOSE, "adl_gatherAddresses : Canot open file %s with err %s", MY_IPV4_FILE, strerror(errno));
+//		return (FALSE);
+//	}
+//	while (fgets(addrBuffer, sizeof(addrBuffer), m_v4list) != NULL)/*从文件读出ipv4自定义地址*/
+//	{
+//		adl_str2sockunion((guchar *)addrBuffer, (union sockunion*)toUse);
+//		copSiz = sizeof(struct sockaddr_in);/* copy address */
+//		event_logi(VVERBOSE, "Copying %d bytes", copSiz);
+//		memcpy(&localAddresses[*numberOfNets], (char *)toUse, copSiz);
+//		event_log(VVERBOSE, "Setting Family");
+//		/* set family */
+//		(&(localAddresses[*numberOfNets]))->sa.sa_family = AF_INET;
+//		(*numberOfNets)++;
+//	}
+//	fclose(m_v4list);
 	event_logi(VERBOSE, "adl_gatherLocalAddresses: Found %d addresses", *numberOfNets);
 	for (ii = 0; ii < (*numberOfNets); ii++)
 	{

@@ -53,16 +53,18 @@
 
 #define TOTAL_SIZE(buf)		((buf)->ctrl_position+(buf)->sack_position+(buf)->data_position- 2*sizeof(SCTP_common_header))
 
-#define DEBUG 1
+//#define DEBUG 1
 
+/**返回的unsigned int中，包含该sctp分组中所有的chunk type
+ *e.g 第0位被设置位1表示包含data chunk*/
 unsigned int rbu_scanPDU(guchar * pdu, guint len)
 {
     gushort processed_len = 0;
     gushort chunk_len = 0;
     unsigned int result = 0;
-    guchar *current_position;
+    guchar *current_position;/*当前位置*/
     guint pad_bytes;
-    SCTP_simple_chunk *chunk;
+    SCTP_simple_chunk *chunk;/*分组中的一个chunk块：chunk head+ chunk data*/
 
     current_position = pdu; /* points to the first chunk in this pdu */
 
@@ -75,7 +77,7 @@ unsigned int rbu_scanPDU(guchar * pdu, guint len)
 
         if (chunk_len < 4 || chunk_len + processed_len > len) return result;
 
-        if (chunk->chunk_header.chunk_id <= 30) {
+        if (chunk->chunk_header.chunk_id <= 30) {/*chunk_id ie chunk type*/
             result = result | (1 << chunk->chunk_header.chunk_id);
             event_logii(VERBOSE, "rbu_scanPDU : Chunk type==%u, result == %x", chunk->chunk_header.chunk_id, result);
         } else {
@@ -83,8 +85,8 @@ unsigned int rbu_scanPDU(guchar * pdu, guint len)
             event_logii(VERBOSE, "rbu_scanPDU : Chunk type==%u setting bit 31 --> result == %x", chunk->chunk_header.chunk_id, result);
         }
         processed_len += chunk_len;
-        pad_bytes = ((processed_len % 4) == 0) ? 0 : (4 - processed_len % 4);
-        processed_len += pad_bytes;
+        pad_bytes = ((processed_len % 4) == 0) ? 0 : (4 - processed_len % 4);/*差几个字节到4字节整数倍*/
+        processed_len += pad_bytes;/*multiple of 4 bytes*/
         chunk_len = (CHUNKP_LENGTH((SCTP_chunk_header *) chunk) + pad_bytes * sizeof(unsigned char));
 
         if (chunk_len < 4 || chunk_len + processed_len > len) return result;
@@ -98,13 +100,13 @@ gboolean rbu_datagramContains(gushort chunk_type, unsigned int chunkArray)
 {
     unsigned int val = 0;
 
-    if (chunk_type >= 31) {
+    if (chunk_type >= 31) {/*大于31，取第31位*/
         val = (1 << 31);
         if ((val & chunkArray) == 0) return FALSE;
         else return TRUE;    /* meaning: it could be true */
     }
 
-    val = (1 << chunk_type);
+    val = (1 << chunk_type);/*取第chunk_type位*/
     if ((val & chunkArray) != 0) return TRUE;
     else return FALSE;
 
@@ -408,7 +410,6 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
 #ifdef DEBUG
 			printf("got a DATA_CHUNK\n");
 #endif
-			printf("got a DATA_CHUNK\n");
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received DATA chunk");
             rxc_data_chunk_rx((SCTP_data_chunk*) chunk, address_index);
             data_chunk_received = TRUE;

@@ -357,6 +357,16 @@ gint CheckForAddressInInstance(gconstpointer a, gconstpointer b)
     return 0;
 
 }
+gint CheckForNothingInInstance(gconstpointer a, gconstpointer b)
+{
+    SCTP_instance* ai = (SCTP_instance*)a;
+    SCTP_instance* bi = (SCTP_instance*)b;
+
+    event_logii(VVERBOSE, "DEBUG: CheckForNotingInInstance, comparing instance a port %u, instance b port %u",
+        ai->localPort, bi->localPort);
+
+	return 0;
+}
 
 
 gint CompareInstanceNames(gconstpointer a, gconstpointer b)
@@ -743,6 +753,75 @@ static void mdi_removeAssociationData(Association * assoc)
 
 }                               /* end: mdi_deleteAssociation */
 
+/*
+ * after   sctpInstance and  currentAssociation have been set for an
+ * incoming packet, this function will return, if a packet may be processed
+ * or if it is not destined for this instance
+ */
+boolean mdi_destination_address_okay_loose(union sockunion * dest_addr)
+{
+    unsigned int i;
+    gboolean found = FALSE;
+    //gboolean any_set = FALSE;
+
+    /* this case will be specially treated after the call to mdi_destination_address_okay() */
+    if (sctpInstance == NULL && currentAssociation == NULL) return TRUE;/*关联、实例都不存在*/
+
+    /*
+    if (sctpInstance == NULL && currentAssociation == NULL) return FALSE;
+    */
+    if (currentAssociation != NULL) {/*当关联存在的时候*/
+        /* search through the _association_ list */
+        /* and accept or decline */
+        for (i=0; i< currentAssociation->noOfLocalAddresses; i++) {
+            event_logii(VVERBOSE, "mdi_destination_address_okay: Checking addresses Dest %x, local %x",
+                sock2ip(dest_addr), sock2ip(&(currentAssociation->localAddresses[i])));
+            if(adl_equal_address(dest_addr, &(currentAssociation->localAddresses[i])) == TRUE) {
+                found = TRUE;
+                break;
+            }
+        }
+        return found;
+    } else {/*关联不存在，实例存在*/
+        /* check whether _instance_ has INADDR_ANY */
+        //if (sctpInstance->has_INADDR_ANY_set == TRUE) {
+        //    any_set = TRUE;
+        //    /* if so, accept */
+        //    switch(sockunion_family(dest_addr)) {
+        //        case AF_INET:
+        //            return TRUE;
+        //            break;
+        //        default:
+        //            break;
+
+        //    }
+        //}
+        //if (sctpInstance->has_IN6ADDR_ANY_set == TRUE) {
+        //    any_set = TRUE;
+        //    /* if so, accept */
+        //    switch(sockunion_family(dest_addr)) {
+        //        case AF_INET:
+        //            return TRUE;
+        //            break;
+        //        default:
+        //            break;
+
+        //    }
+        //}
+        //if (any_set == TRUE) return FALSE;
+        ///* if not, search through the list */
+        //for (i=0; i< sctpInstance->noOfLocalAddresses; i++) {
+        //    if(adl_equal_address(dest_addr, &(sctpInstance->localAddressList[i])) == TRUE) {
+        //        found = TRUE;
+        //        break;
+        //    }
+        //}
+        ///* and accept or decline */
+		found = TRUE;
+    }
+    return found;
+}
+
 
 /*
  * after   sctpInstance and  currentAssociation have been set for an
@@ -756,12 +835,12 @@ boolean mdi_destination_address_okay(union sockunion * dest_addr)
     gboolean any_set = FALSE;
 
     /* this case will be specially treated after the call to mdi_destination_address_okay() */
-    if (sctpInstance == NULL && currentAssociation == NULL) return TRUE;
+    if (sctpInstance == NULL && currentAssociation == NULL) return TRUE;/*关联、实例都不存在*/
 
     /*
     if (sctpInstance == NULL && currentAssociation == NULL) return FALSE;
     */
-    if (currentAssociation != NULL) {
+    if (currentAssociation != NULL) {/*当关联存在的时候*/
         /* search through the _association_ list */
         /* and accept or decline */
         for (i=0; i< currentAssociation->noOfLocalAddresses; i++) {
@@ -773,7 +852,7 @@ boolean mdi_destination_address_okay(union sockunion * dest_addr)
             }
         }
         return found;
-    } else {
+    } else {/*关联不存在，实例存在*/
         /* check whether _instance_ has INADDR_ANY */
         if (sctpInstance->has_INADDR_ANY_set == TRUE) {
             any_set = TRUE;
@@ -990,7 +1069,7 @@ mdi_receiveMessage(gint socket_fd,
 
 
     /* Retrieve association from list  */
-    currentAssociation = retrieveAssociationByTransportAddress(lastFromAddress, lastFromPort,lastDestPort);
+    currentAssociation = retrieveAssociationByTransportAddress(lastFromAddress, lastFromPort, lastDestPort);
 
     if (currentAssociation != NULL) {
         /* meaning we MUST have an instance with no fixed port */
@@ -1042,7 +1121,7 @@ mdi_receiveMessage(gint socket_fd,
     chunkArray = rbu_scanPDU(message->sctp_pdu, len);
 
 
-
+/*found an association from INIT (ACK) CHUNK*/
     if (currentAssociation == NULL) {
         if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT)) != NULL) {
             event_log(VERBOSE, "mdi_receiveMsg: Looking for source address in INIT CHUNK");
@@ -1443,10 +1522,28 @@ mdi_receiveMessage(gint socket_fd,
 
 }                               /* end: mdi_receiveMessage */
 
+/**
+ *  mdi_receiveMessage is the callback function of the SCTP-message distribution.
+ *  It is called by the Unix-interface module when a new datagramm is received.
+ *  当接受到新的数据报时，被Unix-interface module调用
+ *  This function also performs OOTB handling, tag verification etc.
+ *  (see also RFC 4960, section 8.5.1.B)  and sends data to the bundling module of
+ *  the right association
+ *  将数据包发送给正确的关联的bundling module
+ *
+ *  @param recv_ring          the dpdk ring
+ *  @param buffer             pointer to arrived datagram
+ *  @param bufferlength       length of datagramm
+ *  @param fromAddress        source address of DG
+ *  @param portnum            bogus port number
+ */
+
 void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer,
                    int bufferLength, union sockunion * source_addr,
                    union sockunion * dest_addr)
 {
+	printf("\n\n-------enter mdi_receiveMessageAtRing-------\n");
+	zlog_data(buffer, bufferLength);
 	SCTP_message *message;
     SCTP_init_fixed *initChunk = NULL;
     guchar* initPtr = NULL;
@@ -1478,7 +1575,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
     lastFromPath = 0;
 
     message = (SCTP_message *) buffer;
-	//zlog_data(buffer, bufferLength);
     if (!validate_datagram(buffer, bufferLength)) {
         event_log(INTERNAL_EVENT_0, "received corrupted datagramm");
         lastFromAddress = NULL;
@@ -1504,7 +1600,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 
     if (sockunion_family(dest_addr) == AF_INET) {
         addressType = SUPPORT_ADDRESS_TYPE_IPV4;
-        event_log(VERBOSE, "mdi_receiveMessage: checking for correct IPV4 addresses");
+        event_log(VERBOSE, "mdi_receiveMessageAtRing: checking for correct IPV4 addresses");
         if (IN_CLASSD(ntohl(dest_addr->sin.sin_addr.s_addr))) discard = TRUE;
         if (IN_EXPERIMENTAL(ntohl(dest_addr->sin.sin_addr.s_addr))) discard = TRUE;
         if (IN_BADCLASS(ntohl(dest_addr->sin.sin_addr.s_addr))) discard = TRUE;
@@ -1522,48 +1618,15 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
          */
 
     } else
-#ifdef HAVE_IPV6
-    if (sockunion_family(dest_addr) == AF_INET6) {
-        addressType = SUPPORT_ADDRESS_TYPE_IPV6;
-        event_log(VERBOSE, "mdi_receiveMessage: checking for correct IPV6 addresses");
-#if defined (LINUX)
-        if (IN6_IS_ADDR_UNSPECIFIED(&(dest_addr->sin6.sin6_addr.s6_addr))) discard = TRUE;
-        if (IN6_IS_ADDR_MULTICAST(&(dest_addr->sin6.sin6_addr.s6_addr))) discard = TRUE;
-        /* if (IN6_IS_ADDR_V4COMPAT(&(dest_addr->sin6.sin6_addr.s6_addr))) discard = TRUE; */
-
-        if (IN6_IS_ADDR_UNSPECIFIED(&(source_addr->sin6.sin6_addr.s6_addr))) discard = TRUE;
-        if (IN6_IS_ADDR_MULTICAST(&(source_addr->sin6.sin6_addr.s6_addr))) discard = TRUE;
-        /*  if (IN6_IS_ADDR_V4COMPAT(&(source_addr->sin6.sin6_addr.s6_addr))) discard = TRUE; */
-        /*
-        if ((!IN6_IS_ADDR_LOOPBACK(&(source_addr->sin6.sin6_addr.s6_addr))) &&
-            IN6_ARE_ADDR_EQUAL(&(source_addr->sin6.sin6_addr.s6_addr),
-                               &(dest_addr->sin6.sin6_addr.s6_addr))) discard = TRUE;
-        */
-#else
-        if (IN6_IS_ADDR_UNSPECIFIED(&(dest_addr->sin6.sin6_addr))) discard = TRUE;
-        if (IN6_IS_ADDR_MULTICAST(&(dest_addr->sin6.sin6_addr))) discard = TRUE;
-        /* if (IN6_IS_ADDR_V4COMPAT(&(dest_addr->sin6.sin6_addr))) discard = TRUE; */
-
-        if (IN6_IS_ADDR_UNSPECIFIED(&(source_addr->sin6.sin6_addr))) discard = TRUE;
-        if (IN6_IS_ADDR_MULTICAST(&(source_addr->sin6.sin6_addr))) discard = TRUE;
-        /* if (IN6_IS_ADDR_V4COMPAT(&(source_addr->sin6.sin6_addr))) discard = TRUE; */
-        /*
-        if ((!IN6_IS_ADDR_LOOPBACK(&(source_addr->sin6.sin6_addr))) &&
-             IN6_ARE_ADDR_EQUAL(&(source_addr->sin6.sin6_addr),
-                                &(dest_addr->sin6.sin6_addr))) discard = TRUE;
-        */
-#endif
-    } else
-#endif
     {
-        error_log(ERROR_FATAL, "mdi_receiveMessage: Unsupported AddressType Received !");
+        error_log(ERROR_FATAL, "mdi_receiveMessageAtRing: Unsupported AddressType Received !");
         discard = TRUE;
     }
     adl_sockunion2str(source_addr, source_addr_string, SCTP_MAX_IP_LEN);
     adl_sockunion2str(dest_addr, dest_addr_string, SCTP_MAX_IP_LEN);
 
     event_logiiiii(EXTERNAL_EVENT,
-                  "mdi_receiveMessage : len %d, sourceaddress : %s, src_port %u,dest: %s, dest_port %u",
+                  "mdi_receiveMessageAtRing : len %d, sourceaddress : %s, src_port %u,dest: %s, dest_port %u",
                   bufferLength, source_addr_string, lastFromPort, dest_addr_string,lastDestPort);
 
     if (discard == TRUE) {
@@ -1573,7 +1636,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         lastDestPort = 0;
         sctpInstance = NULL;
         currentAssociation = NULL;
-        event_logi(INTERNAL_EVENT_0, "mdi_receiveMessage: discarding packet for incorrect address %s",
+        event_logi(INTERNAL_EVENT_0, "mdi_receiveMessageAtRing: discarding packet for incorrect address %s",
                    dest_addr_string);
         return;
     }
@@ -1586,7 +1649,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         /* meaning we MUST have an instance with no fixed port */
         sctpInstance = currentAssociation->sctpInstance;
         supportedAddressTypes = 0;
-    } else {
+    } else {/*没有相关偶联（port，remote ip）*/
         /* OK - if this packet is for a server, we will find an SCTP instance, that shall
            handle it (i.e. we have the SCTP instance's localPort set and it matches the
            packet's destination port */
@@ -1597,17 +1660,13 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         temporary.localAddressList = dest_addr;
         temporary.supportedAddressTypes = addressType;
 
-        result = g_list_find_custom(InstanceList, &temporary, &CheckForAddressInInstance);
+        result = g_list_find_custom(InstanceList, &temporary, &CheckForNothingInInstance);
 
         if (result == NULL) {
             event_logi(VERBOSE, "Couldn't find SCTP Instance for Port %u and Address in List !",lastDestPort);
             /* may be an an association that is a client (with instance port 0) */
             sctpInstance = NULL;
-#ifdef HAVE_IPV6
-            supportedAddressTypes = SUPPORT_ADDRESS_TYPE_IPV6 | SUPPORT_ADDRESS_TYPE_IPV4;
-#else
             supportedAddressTypes = SUPPORT_ADDRESS_TYPE_IPV4;
-#endif
         } else {
             sctpInstance = (SCTP_instance*)result->data;
             supportedAddressTypes = sctpInstance->supportedAddressTypes;
@@ -1616,8 +1675,8 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         }
     }
 
-    if (mdi_destination_address_okay(dest_addr) == FALSE) {
-         event_log(VERBOSE, "mdi_receiveMsg: this packet is not for me, DISCARDING !!!");
+    if (mdi_destination_address_okay_loose(dest_addr) == FALSE) {
+         event_log(VERBOSE, "mdi_receiveMsgAtRing: this packet is not for me, DISCARDING !!!");
          lastFromAddress = NULL;
          lastDestAddress = NULL;
          lastFromPort = 0;
@@ -1634,8 +1693,8 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 
 
     if (currentAssociation == NULL) {
-        if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT)) != NULL) {
-            event_log(VERBOSE, "mdi_receiveMsg: Looking for source address in INIT CHUNK");
+        if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT)) != NULL) {/*如果没有偶联，找一个CHUNK_INIT*/
+            event_log(VERBOSE, "mdi_receiveMsgAtRing: Looking for source address in INIT CHUNK");
             retval = 0; i = 1;
             do {
                 retval = rbu_findAddress(initPtr, i, &alternateFromAddress, supportedAddressTypes);
@@ -1647,7 +1706,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
             } while (currentAssociation == NULL && retval == 0);
         }
         if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT_ACK)) != NULL) {
-            event_log(VERBOSE, "mdi_receiveMsg: Looking for source address in INIT_ACK CHUNK");
+            event_log(VERBOSE, "mdi_receiveMsgAtRing: Looking for source address in INIT_ACK CHUNK");
             retval = 0; i = 1;
             do {
                 retval = rbu_findAddress(initPtr, i, &alternateFromAddress, supportedAddressTypes);
@@ -1659,20 +1718,21 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
             } while (currentAssociation == NULL && retval == 0);
         }
         if (currentAssociation != NULL) {
-            event_log(VERBOSE, "mdi_receiveMsg: found association from INIT (ACK) CHUNK");
+            event_log(VERBOSE, "mdi_receiveMsgAtRing: found association from INIT (ACK) CHUNK");
             sourceAddressExists = TRUE;
         } else {
             event_log(VERBOSE, "mdi_receiveMsg: found NO association from INIT (ACK) CHUNK");
         }
     }
 
-    /* check whether chunk is illegal or not (see section 3.1 of RFC 4960) */
+    /** check whether chunk is illegal or not (see section 3.1 of RFC 4960)
+	 * An INIT chunk MUST be the only chunk in the SCTP packet carrying it*/
     if ( ((rbu_datagramContains(CHUNK_INIT, chunkArray) == TRUE) && (chunkArray != (1 << CHUNK_INIT))) ||
          ((rbu_datagramContains(CHUNK_INIT_ACK, chunkArray) == TRUE) && (chunkArray != (1 << CHUNK_INIT_ACK))) ||
          ((rbu_datagramContains(CHUNK_SHUTDOWN_COMPLETE, chunkArray) == TRUE) && (chunkArray != (1 << CHUNK_SHUTDOWN_COMPLETE)))
        ){
 
-        error_log(ERROR_MINOR, "mdi_receiveMsg: discarding illegal packet....... :-)");
+        error_log(ERROR_MINOR, "mdi_receiveMsgAtRing: discarding illegal packet....... :-)");
 
         /* silently discard */
          lastFromAddress = NULL;
@@ -1686,7 +1746,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 
     /* check if sctp-message belongs to an existing association */
     if (currentAssociation == NULL) {
-         event_log(VVERBOSE, "mdi_receiveMsg: currentAssociation==NULL, start scanning !");
+         event_log(VVERBOSE, "mdi_receiveMsgAtRing: currentAssociation==NULL, start scanning !");
          /* This is not very elegant, but....only used when assoc is being build up, so :-D */
          if (rbu_datagramContains(CHUNK_ABORT, chunkArray) == TRUE) {
             event_log(INTERNAL_EVENT_0, "mdi_receiveMsg: Found ABORT chunk, discarding it !");
@@ -1722,7 +1782,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         }
         if (rbu_datagramContains(CHUNK_SHUTDOWN_COMPLETE, chunkArray) == TRUE) {
             event_log(INTERNAL_EVENT_0,
-                     "mdi_receiveMsg: Found SHUTDOWN_COMPLETE chunk, discarding it !");
+                     "mdi_receiveMsgAtRing: Found SHUTDOWN_COMPLETE chunk, discarding it !");
             lastFromPort = 0;
             lastDestPort = 0;
             lastDestAddress = NULL;
@@ -1732,7 +1792,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
             return;
         }
         if (rbu_datagramContains(CHUNK_COOKIE_ACK, chunkArray) == TRUE) {
-            event_log(INTERNAL_EVENT_0, "mdi_receiveMsg: Found COOKIE_ACK chunk, discarding it !");
+            event_log(INTERNAL_EVENT_0, "mdi_receiveMsgAtRing: Found COOKIE_ACK chunk, discarding it !");
             lastFromPort = 0;
             lastDestPort = 0;
             lastDestAddress = NULL;
@@ -1745,7 +1805,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         /* section 8.4.7) : Discard the datagram, if it contains a STALE-COOKIE ERROR */
         if (rbu_scanDatagramForError(message->sctp_pdu, len, ECC_STALE_COOKIE_ERROR) == TRUE) {
             event_log(INTERNAL_EVENT_0,
-                          "mdi_receiveMsg: Found STALE COOKIE ERROR, discarding packet !");
+                          "mdi_receiveMsgAtRing: Found STALE COOKIE ERROR, discarding packet !");
             lastFromPort = 0;
             lastDestPort = 0;
             lastDestAddress = NULL;
@@ -1760,7 +1820,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                 if (lastDestPort != sctpInstance->localPort || sctpInstance->localPort == 0) {
                     /* destination port is not the listening port of this this SCTP-instance. */
                     event_log(INTERNAL_EVENT_0,
-                              "mdi_receiveMsg: got INIT Message, but dest. port does not fit -> ABORT");
+                              "mdi_receiveMsgAtRing: got INIT Message, but dest. port does not fit -> ABORT");
                     sendAbort = TRUE;
                     /* as per section 5.1 :
                        If an endpoint receives an INIT, INIT ACK, or COOKIE ECHO chunk but
@@ -1780,7 +1840,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 
             } else {    /* we do not have an instance up listening on that port-> ABORT him */
                 event_log(INTERNAL_EVENT_0,
-                         "mdi_receiveMsg: got INIT Message, but no instance found -> IGNORE");
+                         "mdi_receiveMsgAtRing: got INIT Message, but no instance found -> IGNORE");
 
                 sendAbort = TRUE;
                 initChunk = ((SCTP_init_fixed *) & ((SCTP_init *) message->sctp_pdu)->init_fixed);
@@ -1793,15 +1853,15 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                 if (lastDestPort != sctpInstance->localPort || sctpInstance->localPort == 0) {
                     /* destination port is not the listening port of this this SCTP-instance. */
                     event_log(INTERNAL_EVENT_0,
-                              "mdi_receiveMsg: COOKIE_ECHO ignored, dest. port does not fit");
+                              "mdi_receiveMsgAtRing: COOKIE_ECHO ignored, dest. port does not fit");
                     sendAbort = TRUE;
                 } else {
                     event_log(INTERNAL_EVENT_0,
-                              "mdi_receiveMsg: COOKIE_ECHO Message - processing it !");
+                              "mdi_receiveMsgAtRing: COOKIE_ECHO Message - processing it !");
                 }
             } else { /* sctpInstance == NULL */
                 event_log(INTERNAL_EVENT_0,
-                         "mdi_receiveMsg: got COOKIE ECHO Message, but no instance found -> IGNORE");
+                         "mdi_receiveMsgAtRing: got COOKIE ECHO Message, but no instance found -> IGNORE");
                 lastFromPort = 0;
                 lastDestPort = 0;
                 lastDestAddress = NULL;
@@ -1813,7 +1873,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         } else {
             /* section 8.4.8) send an ABORT with peers veri-tag, set T-Bit */
                 event_log(INTERNAL_EVENT_0,
-                          "mdi_receiveMsg: send ABORT -> message ignored (OOTB - see section 8.4.8) ");
+                          "mdi_receiveMsgAtRing: send ABORT -> message ignored (OOTB - see section 8.4.8) ");
                 sendAbort = TRUE;
         }
 
@@ -1880,7 +1940,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                 lastDestPort = 0;
                 lastDestAddress = NULL;
                 lastFromAddress = NULL;
-                event_log(VERBOSE, "mdi_receiveMsg: scan found INIT, lastInitiateTag!=0, returning");
+                event_log(VERBOSE, "mdi_receiveMsgAtRing: scan found INIT, lastInitiateTag!=0, returning");
                 return;
             }
             initChunk = ((SCTP_init_fixed *) & ((SCTP_init *) message->sctp_pdu)->init_fixed);
@@ -1935,7 +1995,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
             if (state == COOKIE_ECHOED || state == COOKIE_WAIT) {
                 /* see also section 8.5.E.) treat this like OOTB packet */
                 event_logi(EXTERNAL_EVENT,
-                           "mdi_receive_message: shutdownAck in state %u, send SHUTDOWN_COMPLETE ! ",
+                           "mdi_receive_messageAtRing: shutdownAck in state %u, send SHUTDOWN_COMPLETE ! ",
                            state);
                 shutdownCompleteCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_COMPLETE, FLAG_NO_TCB);
                 bu_put_Ctrl_Chunk(ch_chunkString(shutdownCompleteCID),NULL);
@@ -1987,7 +2047,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 
     if (sendAbort == TRUE) {
         if (sendAbortForOOTB == FALSE) {
-            event_log(VERBOSE, "mdi_receiveMsg: sendAbortForOOTB==FALSE -> Discarding MESSAGE: not sending ABORT");
+            event_log(VERBOSE, "mdi_receiveMsgAtRing: sendAbortForOOTB==FALSE -> Discarding MESSAGE: not sending ABORT");
             lastFromAddress = NULL;
             lastDestAddress = NULL;
             lastFromPort = 0;
@@ -2010,7 +2070,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         /* free abort chunk */
         ch_deleteChunk(abortCID);
         /* send an ABORT with peers veri-tag, set T-Bit */
-        event_log(VERBOSE, "mdi_receiveMsg: sending ABORT with T-Bit");
+        event_log(VERBOSE, "mdi_receiveMsgAtRing: sending ABORT with T-Bit");
         lastFromAddress = NULL;
         lastDestAddress = NULL;
         lastFromPort = 0;
@@ -2022,7 +2082,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
     }
 
     /* forward DG to bundling */
-	printf("enter rbu_rcvDatagram\n");
+	//printf("enter rbu_rcvDatagram\n");
     rbu_rcvDatagram(lastFromPath, message->sctp_pdu, bufferLength - sizeof(SCTP_common_header));
 
     lastInitiateTag = 0;
@@ -2109,7 +2169,8 @@ int sctp_initLibrary(int argc, char *argv[])
     /* we might need to replace this socket !*/
     sfd = adl_get_sctpv4_socket();
 
-    if (adl_gatherLocalAddresses(&myAddressList, (int *)&myNumberOfAddresses,sfd,TRUE,&maxMTU,flag_Default) == FALSE) {
+    if (adl_gatherLocalAddresses(&myAddressList, (int *)&myNumberOfAddresses, sfd, TRUE, &maxMTU, flag_Default) == FALSE)
+    {
         LEAVE_LIBRARY("sctp_initLibrary");
         return SCTP_SPECIFIC_FUNCTION_ERROR;
     }
@@ -4114,6 +4175,7 @@ path_id,length);
 */
 int mdi_send_message(SCTP_message * message, unsigned int length, short destAddressIndex)
 {
+	return 0;
     union sockunion dest_su, *dest_ptr;
     SCTP_simple_chunk *chunk;
     unsigned char tos = 0;

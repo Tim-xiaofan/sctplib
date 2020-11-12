@@ -106,7 +106,7 @@ SCTP_common_header;
 typedef struct SCTP_MESSAGE
 {
     SCTP_common_header common_header;
-    guchar sctp_pdu[MAX_SCTP_PDU];
+    guchar sctp_pdu[MAX_SCTP_PDU];/*store several chunks*/
 }
 SCTP_message;
 
@@ -146,7 +146,7 @@ SCTP_message;
 
 typedef struct SCTP_CHUNK_HEADER
 {
-    guint8 chunk_id;            /* e.g. CHUNK_DATA etc. */
+    guint8 chunk_id;            /* e.g. CHUNK_DATA etc. i.e chunk type*/
     guint8 chunk_flags;         /* usually 0    */
     guint16 chunk_length;       /* sizeof(SCTP_chunk_header)+ number of bytes in the chunk */
 }
