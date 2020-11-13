@@ -426,7 +426,6 @@ gint compareAssociationIDs(gconstpointer a, gconstpointer b)
 }
 
 
-
 /**
  *  equalAssociations compares two associations and returns 0 if they are equal. In contrast to
  *  function compareAssociationIDs, equal here means the two associations belong to the same
@@ -534,14 +533,13 @@ Association *retrieveAssociationForced(unsigned int assocID)
     return assoc;
 }
 
-
 /**
  *   retrieveAssociation retrieves a association from the list using the transport address as key.
  *   Returns NULL also if the association is marked "deleted" !
  *   CHECKME : Must return NULL, if no Address-Port combination does not occur in ANY existing assoc.
  *             If it occurs in one of these -> return it
  *
- *   @param  fromAddress address from which data arrived
+ *   @param  fromAddress address from which data arrived i.e source addr in datagram
  *   @param  fromPort SCTP port from which data arrived
  *   @return pointer to the retrieved association, or NULL
  */
@@ -613,7 +611,7 @@ Association *retrieveAssociationByTransportAddress(union sockunion * fromAddress
 /**
  *  checkForExistingAssociations checks wether a given association is already in the list using
  *  the equality condition given by function equalAssociations.
- *  TODO : this must still be implemented. Where is it used ??????????????
+ *  TODO : this must still be implemented. Where is it used ?????????????
  *
  *  @param assoc_new the association to be compared with the association in the list.
  *  @return      1 if was association found, else  0
@@ -1643,7 +1641,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 
 
     /* Retrieve association from list  */
-    currentAssociation = retrieveAssociationByTransportAddress(lastFromAddress, lastFromPort,lastDestPort);
+    currentAssociation = retrieveAssociationByTransportAddress(lastFromAddress, lastFromPort, lastDestPort);
 
     if (currentAssociation != NULL) {
         /* meaning we MUST have an instance with no fixed port */
