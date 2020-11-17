@@ -407,87 +407,51 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
          */
         switch (chunk->chunk_header.chunk_id) {
         case CHUNK_DATA:
-#ifdef DEBUG
-			printf("got a DATA_CHUNK\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received DATA chunk");
             rxc_data_chunk_rx((SCTP_data_chunk*) chunk, address_index);
             data_chunk_received = TRUE;
             break;
-        case CHUNK_INIT:
-#ifdef DEBUG
-			printf("got a INIT_CHUNK\n");
-#endif
+        case CHUNK_INIT:/*prepare MASTER and SLAVE，enter pre queue*/
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received INIT chunk");
             association_state = sctlr_init((SCTP_init *) chunk);
             break;
         case CHUNK_INIT_ACK:
-#ifdef DEBUG
-			printf("got a INIT_ACK_CHUNK\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received INIT ACK chunk");
             association_state = sctlr_initAck((SCTP_init *) chunk);
             break;
         case CHUNK_SACK:
-#ifdef DEBUG
-			printf("got a SACK_CHUNK\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received SACK chunk");
             rtx_process_sack(address_index, chunk, len);
             break;
         case CHUNK_HBREQ:
-#ifdef DEBUG
-			printf("got a HBREQ_CHUNK\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received HB_REQ chunk");
             pm_heartbeat((SCTP_heartbeat *) chunk, address_index);
             break;
         case CHUNK_HBACK:
-#ifdef DEBUG
-			printf("got a CHUNK_HBACK\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received HB_ACK chunk");
             pm_heartbeatAck((SCTP_heartbeat *) chunk);
             break;
         case CHUNK_ABORT:
-#ifdef DEBUG
-			printf("got a CHUNK_ABORT\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received ABORT chunk");
             association_state = sctlr_abort();
             break;
         case CHUNK_SHUTDOWN:
-#ifdef DEBUG
-			printf("got a SHUTDOWN\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received SHUTDOWN chunk");
             association_state = sctlr_shutdown((SCTP_simple_chunk *) chunk);
             break;
         case CHUNK_SHUTDOWN_ACK:
-#ifdef DEBUG
-			printf("got a SHUTDOWN_ACK\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received SHUTDOWN ACK chunk");
             association_state = sctlr_shutdownAck();
             break;
         case CHUNK_ERROR:
-#ifdef DEBUG
-			printf("got a CHUNK_ERROR\n");
-#endif
             event_log(INTERNAL_EVENT_0, "Error Chunk");
             eh_recv_chunk(chunk);
             break;
         case CHUNK_COOKIE_ECHO:
-#ifdef DEBUG
-			printf("got a COOKIE_ECHO\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ECHO chunk");
-            sctlr_cookie_echo((SCTP_cookie_echo *) chunk);/*根据建立偶联*/
+            sctlr_cookie_echo((SCTP_cookie_echo *) chunk);/*建立偶联控制块，状态为closed*/
             break;
         case CHUNK_COOKIE_ACK:
-#ifdef DEBUG
-			printf("got a COOKIE_ACK\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ACK chunk");
             sctlr_cookieAck((SCTP_simple_chunk *) chunk);/*偶联状态设置为established*/
             break;
@@ -497,16 +461,10 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
                        "Chunktype %u not Supported Yet !!!!!!!!", chunk->chunk_header.chunk_id);
             break;*/
         case CHUNK_SHUTDOWN_COMPLETE:
-#ifdef DEBUG
-			printf("got a SHUTDOWN_COMPLETE\n");
-#endif
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received SHUTDOWN_COMPLETE chunk");
             association_state = sctlr_shutdownComplete();
             break;
         case CHUNK_FORWARD_TSN:
-#ifdef DEBUG
-			printf("got a FORWARD_TSN\n");
-#endif
             if (mdi_supportsPRSCTP() == TRUE) {
                 event_log(INTERNAL_EVENT_0, "*******************  Bundling received FORWARD_TSN chunk");
                 rxc_process_forward_tsn((SCTP_simple_chunk *) chunk);

@@ -727,15 +727,17 @@ int sctlr_init(SCTP_init * init)
         return return_state;
     }
 
-    if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
+    if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {/*收到INIT并且没有对应关联*/
         event_log(VERBOSE, " DO_5_1_B_INIT: Normal init case ");
         /* DO_5_1_B_INIT : Normal case, no association exists yet */
         /* save a-sides init-tag from init-chunk to be used as a verification tag of the sctp-
-           message carrying the initAck (required since no association is created). */
+           message carrying the initAck (required since no association is created). 
+		   关联不存在，需要保留INIT的init_tag作为之后INIT ACK的验证*/
         mdi_writeLastInitiateTag(ch_initiateTag(initCID));
 
         /* Limit the number of sendstreams a-side requests to the max. number of input streams
            this z-side is willing to accept.
+			限制请求方的发送流数量上限
          */
         inbound_streams = min(ch_noOutStreams(initCID), mdi_readLocalInStreams());
         outbound_streams = min(ch_noInStreams(initCID), mdi_readLocalOutStreams());
@@ -1335,7 +1337,7 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
                                         primaryDestinationAddress,
                                         noOfDestinationAddresses, &destAddress);
 
-        if (noSuccess) {
+        if (noSuccess) {/*关联加入链表失败*/
             /* new association could not be entered in the list of associations */
             error_log(ERROR_MAJOR, "sctlr_cookie_echo: Creation of association failed");
             ch_deleteChunk(initCID);

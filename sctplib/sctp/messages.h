@@ -313,7 +313,7 @@ typedef struct SCTP_INIT
 {
     SCTP_chunk_header chunk_header;
     SCTP_init_fixed   init_fixed;
-    guchar            variableParams[MAX_INIT_OPTIONS_LENGTH];
+    guchar            variableParams[MAX_INIT_OPTIONS_LENGTH];/*变长（可选）参数*/
 }
 SCTP_init;
 

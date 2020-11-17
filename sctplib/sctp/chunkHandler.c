@@ -195,7 +195,7 @@ static gint32 retrieveVLParamFromString(guint16 paramType, guchar * mstring, gui
  * TODO : check for maximum number of addresses, there may possibly be an overflow
  * @param   mstring     pointer to the beginning of the message string
  * @param   length      maximum length of the message that is scanned for addresses
- * @param   addresses   field in which we may return addresses
+ * @param   addresses   field in which we may return addresses 保存提取的IP地址
  * @return  number of IPv4 addresses found
 */
 static gint32
@@ -1479,7 +1479,8 @@ unsigned int ch_getSupportedAddressTypes(ChunkID chunkID)
 
 
 
-/* ch_IPaddresses reads the IP-addresses from an init or initAck */
+/* ch_IPaddresses reads the IP-addresses from an init or initAck 
+	从INIT或INIT ACK提取IP地址*/
 int ch_IPaddresses(ChunkID chunkID, unsigned int mySupportedTypes, union sockunion addresses[],
                     unsigned int *supportedTypes, union sockunion* lastSource)
 {
@@ -1498,7 +1499,7 @@ int ch_IPaddresses(ChunkID chunkID, unsigned int mySupportedTypes, union sockuni
             ((SCTP_init *) chunks[chunkID])->chunk_header.chunk_length -
             sizeof(SCTP_chunk_header) - sizeof(SCTP_init_fixed);
 
-        /* retrieve addresses from initAck */
+        /* retrieve addresses from initAck's option/variable parameter*/
         noOfAddresses = setIPAddresses(&((SCTP_init *)chunks[chunkID])->variableParams[0],
                                                       vl_param_total_length, addresses, supportedTypes,
                                                       mySupportedTypes, lastSource, TRUE, FALSE);
