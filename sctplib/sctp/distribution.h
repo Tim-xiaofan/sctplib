@@ -70,7 +70,34 @@
 #define DEFAULT_MAX_BURST       4       /* maximum burst parameter */
 #define RTO_MAX                 60000
 
-
+/**
+ * This struct contains all data of an association. As far as other modules must know elements
+ * of this struct, read functions are provided. No other module has write access to this structure.
+ * 其他模块都没有访问权
+ */
+typedef struct MS_ASSOCIATION
+{
+    /** The current ID of this association,
+        it is used as a key to find a association in the list,
+        and never changes in the  live of the association  */
+	unsigned int ms_assocId;
+    /** the local port number of this association. */
+    unsigned short localPort;
+    /** the remote port number of this association. */
+    unsigned short remotePort;
+    /** number of destination networks (paths) */
+    short noOfNetworks;
+    /** array of destination addresses */
+    union sockunion *destinationAddresses;
+	/** association type(MASTER or SLAVE)*/
+	int type;
+	/** recv ring*/
+	void *recv_ring;
+	void *ms_assoc;
+	/** ms state*/
+	unsigned ms_state;
+    /** marks an association for deletion */
+}MS_Association;
 /******************** Function Definitions ********************************************************/
 
 /*------------------- Functions called by the ULP ------------------------------------------------*/
@@ -285,7 +312,11 @@ unsigned int mdi_generateTag(void);
 unsigned int mdi_readTagRemote(void);
 unsigned int mdi_readLocalTag(void);
 
-
+void *mdi_readLastRecvRing(void);
+void *mdi_readCurrentMasterAssociation(void);
+MS_Association *retrieveMSAssociationByTransportAddress(union sockunion * fromAddress,
+                                                   unsigned short fromPort,
+                                                   unsigned short toPort);
 
 /* returns: a the start TSN for new association */
 unsigned int mdi_generateStartTSN(void);
@@ -408,6 +439,12 @@ unsigned short mdi_setAssociationData(unsigned int associationID);
 */
 unsigned short mdi_clearAssociationData(void);
 
+/*------------------- Functions to create and delete MS associations --------------------------------*/
+unsigned short mdi_newMasterAssociation(unsigned short local_port,
+                   unsigned short remote_port,
+                   short noOfDestinationAddresses,
+                   union sockunion *destinationAddressList,
+				   void *recv_ring);
 
 /*------------------- Functions to create and delete associations --------------------------------*/
 

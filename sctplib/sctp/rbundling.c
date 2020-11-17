@@ -449,11 +449,11 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
             break;
         case CHUNK_COOKIE_ECHO:
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ECHO chunk");
-            sctlr_cookie_echo((SCTP_cookie_echo *) chunk);/*建立偶联控制块，状态为closed*/
+            sctlr_cookie_echo((SCTP_cookie_echo *) chunk);/*A端建立偶联控制块*/
             break;
         case CHUNK_COOKIE_ACK:
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ACK chunk");
-            sctlr_cookieAck((SCTP_simple_chunk *) chunk);/*偶联状态设置为established*/
+            sctlr_cookieAck((SCTP_simple_chunk *) chunk);/*Z端偶联状态设置为established*/
             break;
      /* case CHUNK_ECNE:
         case CHUNK_CWR:

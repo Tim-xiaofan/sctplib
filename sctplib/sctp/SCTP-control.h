@@ -62,6 +62,10 @@
 #define SHUTDOWNSENT     SCTP_SHUTDOWN_SENT
 #define SHUTDOWNACKSENT  SCTP_SHUTDOWNACK_SENT
 
+/* Association Type*/
+#define MASTER 0;
+#define SLAVE 1;
+
 /* Return codes for a number of functions that treat incoming chunks */
 /* these are used in the rbundling module !                          */
 #define STATE_STOP_PARSING_REMOVED  -1

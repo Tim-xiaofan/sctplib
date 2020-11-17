@@ -1480,7 +1480,7 @@ unsigned int ch_getSupportedAddressTypes(ChunkID chunkID)
 
 
 /* ch_IPaddresses reads the IP-addresses from an init or initAck 
-	从INIT或INIT ACK提取IP地址*/
+	从INIT或INIT ACK提取option部分携带的IP地址*/
 int ch_IPaddresses(ChunkID chunkID, unsigned int mySupportedTypes, union sockunion addresses[],
                     unsigned int *supportedTypes, union sockunion* lastSource)
 {
