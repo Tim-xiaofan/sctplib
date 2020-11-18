@@ -133,11 +133,10 @@ typedef struct SCTPINSTANCE
 }
 SCTP_instance;
 
-
 /**
  * This struct contains all data of an association. As far as other modules must know elements
  * of this struct, read functions are provided. No other module has write access to this structure.
- * 其他模块都没有访问权
+ * 其他模块都没有访问权限
  */
 typedef struct ASSOCIATION
 {
@@ -146,7 +145,6 @@ typedef struct ASSOCIATION
         it is used as a key to find a association in the list,
         and never changes in the  live of the association  */
     unsigned int assocId;
-	unsigned int ms_assocId;
     /** The local tag of this association. */
     unsigned int tagLocal;
     /** The tag of remote side of this association */
@@ -181,18 +179,12 @@ typedef struct ASSOCIATION
     void *bundling;
     /** pointer to SCTP-control */
     void *sctp_control;
-	/** association type(MASTER or SLAVE)*/
-	int type;
-	/** recv ring*/
-	void *recv_ring;
-	/** anothor association*/
-	void *ms_assoc;
-	/** ms state*/
-	unsigned ms_state;
     /** marks an association for deletion */
     boolean deleted;
     /** transparent pointer to some upper layer data */
-    void * ulp_dataptr;
+    void *ulp_dataptr;
+	/** pointer to auxiliary struct which used to select dpdk ring and shutdown*/
+	void *au_struct;
     /** IP TOS value per association */
     unsigned char ipTos;
     unsigned int supportedAddressTypes;
@@ -209,7 +201,6 @@ typedef struct ASSOCIATION
     /*@}*/
 } Association;
 
-
 /******************** Declarations ****************************************************************/
 static gboolean sctpLibraryInitialized = FALSE;
 
@@ -221,7 +212,8 @@ static GList* AssociationList = NULL;
 /**
  * no Keyed list of pre associations
  */
-static GList *preAssociationList = NULL;
+static GList *masterAssociationList = NULL;
+static GList *slaveAssociationList = NULL;
 
 /**
  * Whenever an external event (ULP-call, socket-event or timer-event) this variable must
@@ -265,7 +257,8 @@ static unsigned short lastSCTP_instanceName = 1;
    AssociationIDs are counted up, and if a new one is needed, they are checked for wraps
  */
 static unsigned int nextAssocId = 1;
-static unsigned int nextMSAssocId = 1;
+static unsigned int nextMasterAssocId = 1;
+static unsigned int nextSlaveAssocId = 1;
 
 /**
    initAck is sent to this address
@@ -329,6 +322,17 @@ unsigned short mdi_getUnusedInstanceName(void);
 /*------------------- Internal LIST Functions ----------------------------------------------------*/
 
 
+void mdi_displayList(GList *list)
+{
+	GList *gl = NULL;
+	for(gl = list; gl != NULL; gl=gl->next)
+	{
+		printf("List: assoc[id=%d lP=%d, rP=%d, nNet=%d]\n",
+					((MS_Association*)gl->data)->ms_assocId, ((MS_Association*)gl->data)->localPort,
+					((MS_Association*)gl->data)->remotePort, ((MS_Association*)gl->data)->noOfNetworks); 
+
+	}
+}
 
 /*
  * return 1 or -1 if instances have different port,
@@ -441,9 +445,9 @@ gint compareMSAssociationIDs(gconstpointer a, gconstpointer b)
 {
     /* two associations are equal if there local tags (in this implementation also used as
        association ID) are equal. */
-    if (((Association*)a)->ms_assocId == ((Association*)b)->ms_assocId)
+    if (((MS_Association*)a)->ms_assocId == ((MS_Association*)b)->ms_assocId)
         return 0;
-    else if (((Association*)a)->ms_assocId < ((Association*)b)->ms_assocId)
+    else if (((MS_Association*)a)->ms_assocId < ((MS_Association*)b)->ms_assocId)
         return -1;
     else
         return 1;
@@ -481,31 +485,38 @@ gint equalMSAssociations(gconstpointer a, gconstpointer b)
 {
     int i,j;
 
-    event_logii(VVERBOSE, "equalMSAssociations: checking assoc A[id=%d] and assoc B[id=%d]",
-        ((MS_Association*)a)->ms_assocId,((MS_Association*)b)->ms_assocId);
+    event_logiiiiiiii(VVERBOSE, "equalMSAssociations: checking assoc A[id=%d lP=%d, rP=%d, nNet=%d] and assoc B[id=%d lP=%d, rP=%d, nNet=%d]",
+        ((MS_Association*)a)->ms_assocId, ((MS_Association*)a)->localPort, ((MS_Association*)a)->remotePort, ((MS_Association*)a)->noOfNetworks, 
+		((MS_Association*)b)->ms_assocId, ((MS_Association*)b)->localPort, ((MS_Association*)b)->remotePort, ((MS_Association*)b)->noOfNetworks);
 
     /* two associations are equal if their remote and local ports are equal and at least
        one of their remote addresses are equal. This is like in TCP, where a connection
        is identified by the transport address, i.e. the IP-address and port of the peer. */
 
-    if ( (((MS_Association *)a)->remotePort == ((Association *)b)->remotePort) &&
-         (((MS_Association *)a)->localPort == ((Association *)b)->localPort) )
+    if ( (((MS_Association *)a)->remotePort == ((MS_Association *)b)->remotePort) &&
+         (((MS_Association *)a)->localPort == ((MS_Association *)b)->localPort) )
 	{
         for (i = 0; i < ((MS_Association *)a)->noOfNetworks; i++)
 		{
 			for (j = 0; j < ((MS_Association *)b)->noOfNetworks; j++)
 			{
-                event_logii(VVERBOSE, "equalMS_Associations: checking address A[%d] address B[%d]",i,j);
-                if (adl_equal_address
-                    (&(((MS_Association *)a)->destinationAddresses[i]),
-                     &(((MS_Association *)b)->destinationAddresses[j])) == TRUE)
-                        return 0;
+                event_logii(VVERBOSE, "equalMSAssociations: checking address A[%d] address B[%d]",i,j);
+                if (adl_equal_address(&(((MS_Association *)a)->destinationAddresses[i]), &(((MS_Association *)b)->destinationAddresses[j])) == TRUE)
+				{
+					if ( (((MS_Association *)b)->deleted == FALSE) && (((MS_Association *)a)->deleted == FALSE)) {
+						event_log(VVERBOSE, "equalMSAssociations: found TWO equal assocs !");
+						return 0;
+					} else {
+						event_log(VVERBOSE, "equalMSAssociations: found NO equal assocs with [equal addr and equal port, but no equal deleted]!");
+						return 1;
+					}
+				}
             }
 		}
-       event_log(VVERBOSE, "equalMS_Associations: found NO equal assocs !");/*port equal, but addr not equal*/
+       event_log(VVERBOSE, "equalMSAssociations: found NO equal assocs with [equal port, but no equal addr]!");/*port equal, but addr not equal*/
        return 1;
     }
-    event_log(VVERBOSE, "equalMS_Associations: found NO equal assocs !");
+    event_log(VVERBOSE, "equalMSAssociations: found NO equal assocs with [no equal port]!");
     return 1;
 }
 
@@ -555,34 +566,68 @@ gint equalAssociations(gconstpointer a, gconstpointer b)
 }
 
 /**
- * retrieveMSAssociation retrieves a MS association from the pre list using the MS id as key.
+ * retrieveSlaveAssociation retrieves a MS association from the slave list using the MS id as key.
  * Returns NULL also if the association is marked "deleted" !
  * @param assocID  association ID
  * @return  pointer to the retrieved association, or NULL
  */
-Association *retrieveMSAssociation(unsigned int ms_assocId)
+MS_Association *retrieveSlaveAssociation(unsigned int ms_assocId)
 {
-    Association *assoc;
-    Association *assocFindP;
+    MS_Association *assoc;
+    MS_Association *assocFindP;
     GList* result = NULL;
 
-    event_logi(INTERNAL_EVENT_0, "retrieving MS association %08x from pre list", ms_assocId);
+    event_logi(INTERNAL_EVENT_0, "retrieving slave association %08x from master list", ms_assocId);
 
-    tmpAssoc.ms_assocId = ms_assocId;
-    tmpAssoc.deleted = FALSE;
-    assocFindP = &tmpAssoc;
+    MS_tmpAssoc.ms_assocId = ms_assocId;
+    MS_tmpAssoc.deleted = FALSE;
+    assocFindP = &MS_tmpAssoc;
     assoc = NULL;
 
-    result = g_list_find_custom(preAssociationList, assocFindP, &compareMSAssociationIDs);
+    result = g_list_find_custom(slaveAssociationList, assocFindP, &compareMSAssociationIDs);
     if (result != NULL) {
 
-        assoc = (Association *)result->data;
+        assoc = (MS_Association *)result->data;
 
         if (assoc->deleted) {
             assoc = NULL;
         }
     } else {
-        event_logi(INTERNAL_EVENT_0, "MS association %08x not in pre list", ms_assocId);
+        event_logi(INTERNAL_EVENT_0, "slave association %08x not in master list", ms_assocId);
+        assoc = NULL;
+    }
+    return assoc;
+}
+
+/**
+ * retrieveMasterAssociation retrieves a MS association from the pre list using the MS id as key.
+ * Returns NULL also if the association is marked "deleted" !
+ * @param assocID  association ID
+ * @return  pointer to the retrieved association, or NULL
+ */
+MS_Association *retrieveMasterAssociation(unsigned int ms_assocId)
+{
+    MS_Association *assoc;
+    MS_Association *assocFindP;
+    GList* result = NULL;
+
+    event_logi(INTERNAL_EVENT_0, "retrieving master association %08x from master list", ms_assocId);
+
+    MS_tmpAssoc.ms_assocId = ms_assocId;
+    MS_tmpAssoc.deleted = FALSE;
+    assocFindP = &MS_tmpAssoc;
+    assoc = NULL;
+
+    result = g_list_find_custom(masterAssociationList, assocFindP, &compareMSAssociationIDs);
+    if (result != NULL) {
+
+        assoc = (MS_Association *)result->data;
+
+        if (assoc->deleted) {
+            assoc = NULL;
+        }
+    } else {
+        event_logi(INTERNAL_EVENT_0, "master association %08x not in master list", ms_assocId);
         assoc = NULL;
     }
     return assoc;
@@ -735,10 +780,12 @@ Association *retrieveAssociationByTransportAddress(union sockunion *fromAddress,
  *   @param  fromPort SCTP port from which data arrived
  *   @return pointer to the retrieved association, or NULL
  */
-MS_Association *retrieveMSAssociationByTransportAddress(union sockunion * fromAddress,
+MS_Association *mdi_retrieveMasterAssociationByTransportAddress(union sockunion * fromAddress,
                                                    unsigned short fromPort,
                                                    unsigned short toPort)
 {
+	printf("before retrieveMasterAssociationByTransportAddress:\n");
+	mdi_displayList(masterAssociationList);
 	MS_Association *assocr;
     MS_Association *assocp;
     GList* result = NULL;
@@ -750,15 +797,15 @@ MS_Association *retrieveMSAssociationByTransportAddress(union sockunion * fromAd
     case AF_INET:
         event_logi(INTERNAL_EVENT_0,
                    "Looking for IPv4 Address %x (in NBO)", sock2ip(fromAddress));
-        tmpAssoc.destinationAddresses[0].sa.sa_family = AF_INET;
-        tmpAssoc.destinationAddresses[0].sin.sin_addr.s_addr = sock2ip(fromAddress);
-        tmpAssoc.remotePort = fromPort;
-        tmpAssoc.localPort = toPort;
-        tmpAssoc.deleted = FALSE;
+        MS_tmpAssoc.destinationAddresses[0].sa.sa_family = AF_INET;
+        MS_tmpAssoc.destinationAddresses[0].sin.sin_addr.s_addr = sock2ip(fromAddress);
+        MS_tmpAssoc.remotePort = fromPort;
+        MS_tmpAssoc.localPort = toPort;
+        MS_tmpAssoc.deleted = FALSE;
         break;
    default:
         error_logi(ERROR_FATAL,
-                   "Unsupported Address Type %d in retrieveAssociationByTransportAddress()",
+                   "Unsupported Address Type %d in retrieveMasterAssociationByTransportAddress()",
                    sockunion_family(fromAddress));
         break;
 
@@ -766,21 +813,21 @@ MS_Association *retrieveMSAssociationByTransportAddress(union sockunion * fromAd
 
     assocp = &MS_tmpAssoc;
 
-    event_log(INTERNAL_EVENT_0, "retrieving association by transport address from list");
+    event_log(INTERNAL_EVENT_0, "retrieving master association by transport address from master list");
 
-    result = g_list_find_custom(preAssociationList, assocp, equalAssociations);
+    result = g_list_find_custom(masterAssociationList, assocp, equalMSAssociations);
 
     if (result != NULL){
         assocr = (MS_Association*)result->data;
         if (assocr->deleted) {
-            event_logi(VERBOSE, "Found assoc that should be deleted, with id %u",assocr->assocId);
+            event_logi(VERBOSE, "Found master assoc that should be deleted, with id %u",assocr->ms_assocId);
             assocr= NULL;
         }
         if (assocr != NULL)
-            event_logi(VERBOSE, "Found valid assoc assoc with id %u",assocr->assocId);
+            event_logi(VERBOSE, "Found valid master assoc assoc with id %u",assocr->ms_assocId);
         return assocr;
     } else {
-        event_log(INTERNAL_EVENT_0, "association indexed by transport address not in list");
+        event_log(INTERNAL_EVENT_0, "master association indexed by transport address not in master list");
     }
     return NULL;
 
@@ -796,17 +843,17 @@ MS_Association *retrieveMSAssociationByTransportAddress(union sockunion * fromAd
  *  @param assoc_new the association to be compared with the association in the list.
  *  @return      1 if was association found, else  0
  */
-static short checkForExistingMSAssociations(MS_Association * assoc_new)
+static short checkForExistingMasterAssociations(MS_Association * assoc_new)
 {
     GList* result = NULL;
 
-    if (preAssociationList == NULL) {
-        event_log(VERBOSE, "checkForExistingMSAssociations preAssocList not set");
+    if (masterAssociationList == NULL) {
+        event_log(VERBOSE, "checkForExistingMasterAssociations preAssocList not set");
 
         return 0;
     }
 
-    result = g_list_find_custom(preAssociationList, assoc_new, equalAssociations);
+    result = g_list_find_custom(masterAssociationList, assoc_new, equalAssociations);
 
     if (result) /* then one of addresses of assoc A was in set of addresses of B */
         return 1;
@@ -1774,6 +1821,12 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
     /* FIXME:  check this out, if it works at all :-D */
     lastFromAddress = source_addr;
     lastDestAddress = dest_addr;
+	lastRecvRing = recv_ring;
+	if(!lastRecvRing)
+	{
+		event_log(INTERNAL_EVENT_0, "invalid recv ring");
+		return;
+	}
 
     lastFromPath = 0;
 
@@ -4995,24 +5048,45 @@ unsigned int mdi_readTagRemote(void)
 /* master and slave has diff recv_ring*/
 void *mdi_getAnotherRing(void* recv_ring)
 {
+	if(recv_ring == NULL)
+	{
+		error_log(ERROR_MINOR, "mdi_getAnotherRing: recv_ring is null");
+		return NULL;
+	}
 	struct rte_ring *tmp = (struct rte_ring*)recv_ring;
 	if(strcmp(tmp->name, sctp_rring->name))
 		return sctp_rring1;
 	else
 	  return sctp_rring;
 }
-
-unsigned int mdi_getUnusediMSAssocId(void)
+unsigned int mdi_getUnusedSlaveAssocId(void)
 {
-    Association * tmp = NULL;
+    MS_Association * tmp = NULL;
     unsigned int newId;
 
     do {
-        if(nextMSAssocId == 0) {
-           nextAssocId++;
+        if(nextSlaveAssocId == 0) {
+           nextSlaveAssocId++;
         }
-        newId = nextMSAssocId;
-        tmp   = retrieveMSAssociation(newId);
+        newId = nextSlaveAssocId;
+        tmp   = retrieveSlaveAssociation(newId);
+        nextAssocId++;
+    } while (tmp != NULL);
+
+    return newId;
+}
+
+unsigned int mdi_getUnusediMasterAssocId(void)
+{
+    MS_Association * tmp = NULL;
+    unsigned int newId;
+
+    do {
+        if(nextMasterAssocId == 0) {
+           nextMasterAssocId++;
+        }
+        newId = nextMasterAssocId;
+        tmp   = retrieveMasterAssociation(newId);
         nextAssocId++;
     } while (tmp != NULL);
 
@@ -5689,12 +5763,18 @@ mdi_newMasterAssociation(unsigned short local_port,
 	currentMasterAssociation->type = MASTER;
     currentMasterAssociation->remotePort = remote_port;
 	currentMasterAssociation->recv_ring = recv_ring;
-	currentMasterAssociation->ms_assocId = mdi_getUnusediMSAssocId();
+	currentMasterAssociation->ms_assocId = mdi_getUnusediMasterAssocId();
     currentMasterAssociation->noOfNetworks = noOfDestinationAddresses;
 	currentMasterAssociation->ms_state = MS_INIT_ACK_WAIT;
-	/* peer addr */
+	currentMasterAssociation->deleted = FALSE;
+	/* store peer addr int dAddr[][]*/
     currentMasterAssociation->destinationAddresses =
         (union sockunion *) malloc(noOfDestinationAddresses * sizeof(union sockunion));
+	if(!currentMasterAssociation->destinationAddresses)
+	{
+        error_log_sys(ERROR_FATAL, (short)errno);
+        return 1;
+	}
     memcpy(currentMasterAssociation->destinationAddresses, destinationAddressList,
          noOfDestinationAddresses * sizeof(union sockunion));
 
@@ -5709,13 +5789,20 @@ mdi_newMasterAssociation(unsigned short local_port,
 	currentSlaveAssociation->type = SLAVE;
 	currentSlaveAssociation->remotePort = 0;
 	currentSlaveAssociation->recv_ring = mdi_getAnotherRing(recv_ring);
-	currentSlaveAssociation->ms_assocId = mdi_getUnusediMSAssocId();
+	if(currentSlaveAssociation->recv_ring == NULL)
+	{
+		error_log(ERROR_MINOR, "slave association can't get a dpdk ring");
+		return 1;
+	}
+	currentSlaveAssociation->ms_assocId = mdi_getUnusedSlaveAssocId();
 	currentSlaveAssociation->noOfNetworks = 0;
 	currentSlaveAssociation->ms_state = MS_INIT_BY_MASTER;
+	currentSlaveAssociation->deleted = FALSE;
 	/* peer addr */
     currentSlaveAssociation->destinationAddresses = NULL;
     /* check if newly created MSATER association already exists. */
-    if (checkForExistingMSAssociations(currentMasterAssociation) == 1) {
+	//printf("!!!!!!!checkForExistingMSAssociations\n");
+    if (checkForExistingMasterAssociations(currentMasterAssociation) == 1) {
         error_log(ERROR_MAJOR, "tried to create an existing MASTER association");
         /* FIXME : also free bundling, pathmanagement,sctp_control */
         free(currentMasterAssociation->destinationAddresses);
@@ -5729,9 +5816,23 @@ mdi_newMasterAssociation(unsigned short local_port,
 	
 	currentSlaveAssociation->ms_assoc = currentMasterAssociation;
 	currentMasterAssociation->ms_assoc = currentSlaveAssociation;
-    preAssociationList = g_list_insert_sorted(preAssociationList, currentMasterAssociation, &compareMSAssociationIDs);
-    preAssociationList = g_list_insert_sorted(preAssociationList, currentSlaveAssociation, &compareMSAssociationIDs);
+    masterAssociationList = g_list_insert_sorted(masterAssociationList, currentMasterAssociation, &compareMSAssociationIDs);
+    slaveAssociationList = g_list_insert_sorted(slaveAssociationList, currentSlaveAssociation, &compareMSAssociationIDs);
+	GList *gl = NULL;
+	for(gl = masterAssociationList; gl != NULL; gl=gl->next)
+	{
+		printf("afte enter GList: assoc[id=%d lP=%d, rP=%d, nNet=%d]\n",
+					((MS_Association*)gl->data)->ms_assocId, ((MS_Association*)gl->data)->localPort,
+					((MS_Association*)gl->data)->remotePort, ((MS_Association*)gl->data)->noOfNetworks); 
 
+	}
+	gl = NULL;
+	for(gl = slaveAssociationList; gl != NULL; gl=gl->next)
+	{
+		printf("afte enter GList: assoc[id=%d lP=%d, rP=%d, nNet=%d]\n",
+					((MS_Association*)gl->data)->ms_assocId, ((MS_Association*)gl->data)->localPort,
+					((MS_Association*)gl->data)->remotePort, ((MS_Association*)gl->data)->noOfNetworks); 
+	}
     return 0;
 }                              /* end: mdi_newMSAssociation */
 

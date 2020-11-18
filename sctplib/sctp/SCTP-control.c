@@ -670,7 +670,7 @@ int sctlr_init(SCTP_init * init)
     ChunkID initAckCID;
     ChunkID abortCID;
     ChunkID shutdownAckCID;
-    unsigned short inbound_streams, outbound_streams;
+    unsigned short inbound_streams;
     unsigned int supportedTypes=0, peerSupportedTypes=0;
     int process_further, result;
     int return_state = STATE_OK;
@@ -730,8 +730,13 @@ int sctlr_init(SCTP_init * init)
         return return_state;
     }
 
-	Association *masterAssociation = NULL;
-	masterAssociation = retrieveAssociationByTransportAddress(last_source, mdi_readLastDestPort(), mdi_readLastDestPort());
+	MS_Association *masterAssociation = NULL;
+	masterAssociation = mdi_retrieveMasterAssociationByTransportAddress(&last_source, mdi_readLastDestPort(), mdi_readLastDestPort());
+	if(masterAssociation)/* not null*/
+	{
+		error_log(ERROR_MAJOR, "sctlr_init: exist ms association with same remote addr, local port, remote port");
+		return return_state;
+	}
     if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
         /* DO_5_1_B_INIT : Normal case, no association exists yet */
 		/* create Master TCB and it's Slave TCB */ 
@@ -745,9 +750,11 @@ int sctlr_init(SCTP_init * init)
 		}
 		else
 		{
+			event_log(INTERNAL_EVENT_0, "check after mdi_newMasterAssociation called");
+			masterAssociation = mdi_retrieveMasterAssociationByTransportAddress(&last_source, mdi_readLastFromPort(), mdi_readLastDestPort());
 			if(masterAssociation == NULL)
 			{
-				error_log(ERROR_MAJOR, "mdi_readCurrentMasterAssociation: cannot get currentMasterAssociation");
+				error_log(ERROR_MAJOR, "retrieveMSAssociationByTransportAddress: cannot get masterAssociation");
 				return return_state;
 			}
 			if(masterAssociation->ms_assoc == NULL)
@@ -755,6 +762,11 @@ int sctlr_init(SCTP_init * init)
 				error_log(ERROR_MAJOR, "sctlr_init: A master association with no slave");
 				return return_state;
 			}
+			event_logii(INTERNAL_EVENT_0, "get a master assoc-%d, with slave assoc-%d", 
+						masterAssociation->ms_assocId, ((MS_Association *)masterAssociation->ms_assoc)->ms_assocId);
+
+			event_logii(INTERNAL_EVENT_0, "get a slave assoc-%d, with master assoc-%d", 
+						((MS_Association *)masterAssociation->ms_assoc)->ms_assocId, masterAssociation->ms_assocId);
 		}
         /* DO_5_1_B_INIT : Normal case, no association exists yet */
         /* save a-sides init-tag from init-chunk to be used as a verification tag of the sctp-

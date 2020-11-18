@@ -96,6 +96,7 @@ typedef struct MS_ASSOCIATION
 	void *ms_assoc;
 	/** ms state*/
 	unsigned ms_state;
+	gboolean deleted;
     /** marks an association for deletion */
 }MS_Association;
 /******************** Function Definitions ********************************************************/
@@ -130,6 +131,9 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                    int bufferLength, union sockunion * source_addr,
                    union sockunion * dest_addr);
 
+MS_Association *mdi_retrieveMasterAssociationByTransportAddress(union sockunion * fromAddress,
+                                                   unsigned short fromPort,
+                                                   unsigned short toPort);
 /*------------------- Functions called by the SCTP bundling --------------------------------------*/
 
 /* Used by bundling to send a SCTP-datagramm. 

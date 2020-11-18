@@ -127,7 +127,7 @@
 #define EXTERNAL_EVENT_X   1    /* for unexpected external events from ULP, peer or Timers */
 
 
-#define Current_event_log_ 6    /* Defines the level up to which the events are printed.
+#define Current_event_log_ 251    /* Defines the level up to which the events are printed.
                                    VVERBOSE (6) means all events are printed.
                                    This parameter could also come from a command line option */
 
