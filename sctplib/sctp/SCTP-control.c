@@ -115,7 +115,7 @@ typedef struct SCTP_CONTROLDATA
     void * instance;
     /*@} */
 } SCTP_controlData;
-
+static void sci_timer_expired(TimerID timerID, void *associationIDvoid, void *unused);
 /* -------------------- Declarations -------------------------------------------------------------*/
 
 /*
@@ -310,7 +310,6 @@ static void sci_timer_expired(TimerID timerID, void *associationIDvoid, void *un
     localData = NULL;
     mdi_clearAssociationData();
 }
-
 
 /*------------------- Functions called by the ULP via message-distribution -----------------------*/
 
@@ -676,7 +675,7 @@ int sctlr_init(SCTP_init * init)
     int return_state = STATE_OK;
 
     event_log(EXTERNAL_EVENT, "sctlr_init() is executed");
-
+	/*修改并保留INIT到ch模块的chunks数组,供之后Z端初始化偶联使用*/
     initCID = ch_makeChunk((SCTP_simple_chunk *) init);
 
     if (ch_chunkType(initCID) != CHUNK_INIT) {
@@ -739,8 +738,13 @@ int sctlr_init(SCTP_init * init)
 	}
     if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
         /* DO_5_1_B_INIT : Normal case, no association exists yet */
-		/* create Master TCB and it's Slave TCB */ 
-		nrAddresses = 1;
+		/* create Master TCB and it's Slave TCB */
+		
+		/*gather ip addr in INIT, slave as active peer, must store all ip addr given network cell A*/
+		nrAddresses = ch_IPaddresses(initCID, supportedTypes, rAddresses, &peerSupportedTypes, &last_source);
+		supportedTypes = mdi_getSupportedAddressTypes();
+        if ((supportedTypes & peerSupportedTypes) == 0)
+            error_log(ERROR_FATAL, "BAKEOFF: Program error, no common address types in sctlr_init()");
 		noSuccess = mdi_newMasterAssociation(mdi_readLastDestPort(), mdi_readLastFromPort(), nrAddresses, &last_source, mdi_readLastRecvRing());
 		if (noSuccess)
 		{
@@ -762,11 +766,30 @@ int sctlr_init(SCTP_init * init)
 				error_log(ERROR_MAJOR, "sctlr_init: A master association with no slave");
 				return return_state;
 			}
-			event_logii(INTERNAL_EVENT_0, "get a master assoc-%d, with slave assoc-%d", 
+			event_logii(INTERNAL_EVENT_0, "get a master assoc[%d], with slave assoc[%d]", 
 						masterAssociation->ms_assocId, ((MS_Association *)masterAssociation->ms_assoc)->ms_assocId);
 
-			event_logii(INTERNAL_EVENT_0, "get a slave assoc-%d, with master assoc-%d", 
+			event_logii(INTERNAL_EVENT_0, "get a slave assoc[%d], with master assoc[%d]", 
 						((MS_Association *)masterAssociation->ms_assoc)->ms_assocId, masterAssociation->ms_assocId);
+			guchar destAddress[SCTP_MAX_IP_LEN];
+			if(adl_sockunion2str(((MS_Association *)masterAssociation->ms_assoc)->destinationAddresses, destAddress, SCTP_MAX_IP_LEN) == 0)
+			{
+				error_log(ERROR_MAJOR, "adl_sockunion2str err");
+				return return_state;
+			}
+			if(mdi_associatex(ch_noOutStreams(initCID), 
+						&destAddress, 
+						((MS_Association *)masterAssociation->ms_assoc)->noOfNetworks, 
+						1, 
+						((MS_Association *)masterAssociation->ms_assoc)->remotePort,
+						(MS_Association *)masterAssociation->ms_assoc, 
+						initCID,
+						NULL) == 0)
+			{
+				error_log(ERROR_MAJOR, "associate faile");
+				return return_state;
+			}
+			event_log(INTERNAL_EVENT_0, "*******************creat and init a Association TCB");
 		}
         /* DO_5_1_B_INIT : Normal case, no association exists yet */
         /* save a-sides init-tag from init-chunk to be used as a verification tag of the sctp-
@@ -2343,6 +2366,83 @@ void sci_allChunksAcked()
 
 
 /*------------------- Functions called message by distribution to create and delete --------------*/
+
+/**
+ * This function is called to initiate the setup an association.
+ * The local tag and the initial TSN are randomly generated.
+ * Together with the parameters of the function, they are used to create the init-message.
+ * This data are also stored in a newly created association-record.
+ *
+ * @param noOfOutStreams        number of send streams.
+ * @param noOfInStreams         number of receive streams.
+ * @param destinationList       
+ * @param numDestAddresses
+ * @param withPRSCTP
+ * @param initCID				the index of INIT provied
+ */
+void sci_associate(unsigned short noOfOutStreams,
+                   unsigned short noOfInStreams,
+                   union sockunion* destinationList,
+                   unsigned int numDestAddresses,
+                   gboolean withPRSCTP,
+				   short initCID)
+{
+    guint32 state;
+	unsigned int count;
+    /* ULP has called sctp_associate at distribution.
+       Distribution has allready allocated the association data and partially initialized */
+
+    if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
+        error_log(ERROR_MAJOR, "read SCTP-control failed");
+        return;
+    }
+
+    state = localData->association_state;
+
+    switch (state) {
+    case CLOSED:
+        event_log(EXTERNAL_EVENT, "event: assocatiate in state CLOSED");
+
+        /* store the number of streams */
+        localData->NumberOfOutStreams = noOfOutStreams;
+        localData->NumberOfInStreams = noOfInStreams;
+        
+        localData->initChunk = (SCTP_init *) ch_chunkString(initCID);
+        ch_forgetChunk(initCID);
+
+        /* send init chunk */
+        for (count = 0; count < numDestAddresses; count++) {
+            bu_put_Ctrl_Chunk((SCTP_simple_chunk *) localData->initChunk, &count);
+            bu_sendAllChunks(&count);
+        }
+
+        localData->cookieChunk = NULL;
+        localData->local_tie_tag = 0;
+        localData->peer_tie_tag = 0;
+
+        /* start init timer */
+        localData->initTimerDuration = pm_readRTO(pm_readPrimaryPath());
+
+        if (localData->initTimer != 0) sctp_stopTimer(localData->initTimer);
+
+        localData->initTimer = adl_startTimer(localData->initTimerDuration,
+                                               &sci_timer_expired,
+                                               TIMER_TYPE_INIT,
+                                               (void *) &localData->associationID, NULL);
+
+        state = COOKIE_WAIT;
+        break;
+    default:
+        error_logi(EXTERNAL_EVENT_X, "Erroneous Event : associate called in state %u", state);
+        break;
+    }
+
+    localData->association_state = state;
+    localData = NULL;
+}
+
+
+
 
 /**
     newSCTP_control allocates data for a new SCTP-Control instance

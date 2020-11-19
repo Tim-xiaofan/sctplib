@@ -405,7 +405,12 @@ gint CompareInstanceNames(gconstpointer a, gconstpointer b)
     else return 0;
 }
 
-
+gint CompareInstanceLocalPorts(gconstpointer a, gconstpointer b)
+{
+    if ((((SCTP_instance*)a)->localPort) < ((SCTP_instance*)b)->localPort) return -1;
+    else if ((((SCTP_instance*)a)->localPort) > ((SCTP_instance*)b)->localPort) return 1;
+    else return 0;
+}
 /**
   * Retrieve instance.
   *
@@ -4875,6 +4880,152 @@ void mdi_queueStatusChangeNotif(int queueType, int queueId, int queueLen)
    Elements of this association data can be read by the following functions.
 */
 
+/**
+ * This function is called SCTP control to setup an association.
+ * SCTP control provide SCTP-instance to which this association belongs to.
+ * SCTP control provide the INIT which get from network cell A 
+ *  @param noOfOutStreams        number of output streams the ULP would like to have
+ *  @param destinationAddress    destination address
+ *  @param destinationPort       destination port
+ *  @param ulp_data              pointer to an ULP data structure, will be passed with callbacks !
+ *  @param slave		         pointer to an MS_Association structure, 
+ *								 will be used to shutdown the Association which communication with network cell A !
+ *	@param initID				 the index of init to send to network cell B
+ *  @return association ID of this association, 0 in case of failures
+ */
+unsigned int mdi_associatex( unsigned short noOfOutStreams,
+                             unsigned char  destinationAddresses[SCTP_MAX_NUM_ADDRESSES][SCTP_MAX_IP_LEN],
+                             unsigned int   noOfDestinationAddresses,
+                             unsigned int   maxSimultaneousInits,
+                             unsigned short destinationPort,
+                             MS_Association *slave,
+							 ChunkID initID,
+							 void *ulp_data)
+
+{
+	printf("!!!!!!!!!!!!enter mdi_associatex\n");
+    unsigned int assocID, count;
+    unsigned short zlocalPort;
+    union sockunion dest_su[SCTP_MAX_NUM_ADDRESSES];
+    gboolean withPRSCTP;
+	AddressScopingFlags filterFlags = flag_Default;
+    SCTP_instance temporary;
+    GList* result = NULL;
+
+    SCTP_instance *old_Instance = sctpInstance;
+    Association *old_assoc = currentAssociation;
+
+    ENTER_LIBRARY("mdi_associatex");
+
+    ZERO_CHECK_LIBRARY;
+
+    if (destinationPort == 0) {
+            error_log(ERROR_MAJOR, "mdi_associate: destination port is zero....this is not allowed");
+            sctpInstance = old_Instance;
+            currentAssociation = old_assoc;
+            LEAVE_LIBRARY("mdi_associate");
+            return 0;
+    }
+
+    for (count = 0; count <  noOfDestinationAddresses; count++) {
+        if (adl_str2sockunion(destinationAddresses[count], &dest_su[count]) < 0) {
+            error_log(ERROR_MAJOR, "mdi_associate: destination adress not good !");
+            sctpInstance = old_Instance;
+            currentAssociation = old_assoc;
+            LEAVE_LIBRARY("mdi_associate");
+            return 0;
+        } else if(adl_filterInetAddress(&dest_su[count], filterFlags) == FALSE) {
+            error_log(ERROR_MAJOR, "mdi_associate: destination adress not good !");
+            sctpInstance = old_Instance;
+            currentAssociation = old_assoc;
+            LEAVE_LIBRARY("mdi_associate");
+            return 0;
+        }
+    }
+
+    event_log(EXTERNAL_EVENT, "mdi_associatex called");
+    event_logi(VERBOSE, "Looking for SCTP Instance with localPort[%u] in the list", slave->localPort);
+
+    temporary.localPort =  slave->localPort;
+    result = g_list_find_custom(InstanceList, &temporary, &CompareInstanceLocalPorts);
+    if (result == NULL) {
+        error_log(ERROR_MAJOR, "mdi_associate: SCTP instance not in the list !!!");
+        sctpInstance = old_Instance;
+        currentAssociation = old_assoc;
+        LEAVE_LIBRARY("mdi_associate");
+        return 0;
+    }
+    sctpInstance = (SCTP_instance*)result->data;
+
+    if (((SCTP_instance*)result->data)->localPort == 0)
+       zlocalPort = seizePort();
+    else
+       zlocalPort = ((SCTP_instance*)result->data)->localPort;
+
+    event_logi(VERBOSE, "Chose local port %u for associate !", zlocalPort);
+
+    withPRSCTP = librarySupportsPRSCTP;
+
+    /* Create new association */
+    if (mdi_newAssociation(sctpInstance,
+                           zlocalPort, /* local client port */
+                           destinationPort, /* remote server port */
+                           mdi_generateTag(),
+                           0,
+                           (short)noOfDestinationAddresses,
+                           dest_su)) {
+        error_log(ERROR_MAJOR, "Creation of association failed");
+        sctpInstance = old_Instance;
+        currentAssociation = old_assoc;
+        LEAVE_LIBRARY("mdi_associate");
+        return 0;
+    }
+	GList *gl=NULL;
+	for(gl = AssociationList; gl; gl = gl->next)
+	{
+		Association *tmp = (Association *)gl->data;
+		printf("******Association:\n");
+		printf("[id:%d, lp:%d, rp:%d, nlAddr:%d], nNets:%d\n",
+					tmp->assocId, tmp->localPort,
+					tmp->remotePort, tmp->noOfLocalAddresses,
+					tmp->noOfNetworks);
+		printf("local addrs:");
+		int i;
+		for(i = 0; i< tmp->noOfLocalAddresses; i++)
+		{
+			guchar buf[64];
+			adl_sockunion2str(&tmp->localAddresses[i], buf, 64);
+			printf("%s ", buf);
+		}
+		printf("\n");
+		printf("dest addrs:");
+		for(i = 0; i< tmp->noOfNetworks; i++)
+		{
+			guchar buf[64];
+			adl_sockunion2str(&tmp->destinationAddresses[i], buf, 64);
+			printf("%s ", buf);
+		}
+		printf("\n");
+
+	}
+    currentAssociation->ulp_dataptr = ulp_data;
+
+    /* call associate at SCTP-control */
+    sci_associate(noOfOutStreams,
+                  ((SCTP_instance*)result->data)->noOfInStreams,
+                  dest_su,
+                  noOfDestinationAddresses,
+                  withPRSCTP,
+				  initID);
+
+    assocID = currentAssociation->assocId;
+
+    sctpInstance = old_Instance;
+    currentAssociation = old_assoc;
+    LEAVE_LIBRARY("mdi_associate");
+    return assocID;
+}                               /* end: mdi_associatex */
+
 
 /* The following functions return pointer to data of modules of the SCTP. As only these
    modules know the exact type of these data structures, so the returned pointer are
@@ -5767,7 +5918,7 @@ mdi_newMasterAssociation(unsigned short local_port,
     currentMasterAssociation->noOfNetworks = noOfDestinationAddresses;
 	currentMasterAssociation->ms_state = MS_INIT_ACK_WAIT;
 	currentMasterAssociation->deleted = FALSE;
-	/* store peer addr int dAddr[][]*/
+	/* store peer addr into dAddr[][]*/
     currentMasterAssociation->destinationAddresses =
         (union sockunion *) malloc(noOfDestinationAddresses * sizeof(union sockunion));
 	if(!currentMasterAssociation->destinationAddresses)
@@ -5775,7 +5926,7 @@ mdi_newMasterAssociation(unsigned short local_port,
         error_log_sys(ERROR_FATAL, (short)errno);
         return 1;
 	}
-    memcpy(currentMasterAssociation->destinationAddresses, destinationAddressList,
+	memcpy(currentMasterAssociation->destinationAddresses, destinationAddressList,
          noOfDestinationAddresses * sizeof(union sockunion));
 
 	/* slave assoc */
@@ -5787,7 +5938,7 @@ mdi_newMasterAssociation(unsigned short local_port,
 	}
 	currentSlaveAssociation->localPort = local_port;
 	currentSlaveAssociation->type = SLAVE;
-	currentSlaveAssociation->remotePort = 0;
+	currentSlaveAssociation->remotePort = mdi_readLastDestPort();
 	currentSlaveAssociation->recv_ring = mdi_getAnotherRing(recv_ring);
 	if(currentSlaveAssociation->recv_ring == NULL)
 	{
@@ -5795,11 +5946,26 @@ mdi_newMasterAssociation(unsigned short local_port,
 		return 1;
 	}
 	currentSlaveAssociation->ms_assocId = mdi_getUnusedSlaveAssocId();
-	currentSlaveAssociation->noOfNetworks = 0;
+	currentSlaveAssociation->noOfNetworks = 1;/* FIXME: why set to 1?*/
 	currentSlaveAssociation->ms_state = MS_INIT_BY_MASTER;
 	currentSlaveAssociation->deleted = FALSE;
-	/* peer addr */
-    currentSlaveAssociation->destinationAddresses = NULL;
+	/* store peer addr into dAddr[][]*/
+    currentSlaveAssociation->destinationAddresses = 
+		(union sockunion *)malloc(sizeof(union sockunion) * 1);
+	union sockunion last_dest;
+	int ret = mdi_readLastDestAddress(&last_dest);
+	if(ret != 0)
+	{
+		error_log(ERROR_MINOR, "cannot get dest addr for slave association");
+		return 1;
+	}
+	memcpy(currentSlaveAssociation->destinationAddresses, &last_dest,
+				1 * sizeof(union sockunion));
+	if(!currentSlaveAssociation->destinationAddresses)
+	{
+        error_log_sys(ERROR_FATAL, (short)errno);
+        return 1;
+	}
     /* check if newly created MSATER association already exists. */
 	//printf("!!!!!!!checkForExistingMSAssociations\n");
     if (checkForExistingMasterAssociations(currentMasterAssociation) == 1) {
@@ -5818,22 +5984,9 @@ mdi_newMasterAssociation(unsigned short local_port,
 	currentMasterAssociation->ms_assoc = currentSlaveAssociation;
     masterAssociationList = g_list_insert_sorted(masterAssociationList, currentMasterAssociation, &compareMSAssociationIDs);
     slaveAssociationList = g_list_insert_sorted(slaveAssociationList, currentSlaveAssociation, &compareMSAssociationIDs);
-	GList *gl = NULL;
-	for(gl = masterAssociationList; gl != NULL; gl=gl->next)
-	{
-		printf("afte enter GList: assoc[id=%d lP=%d, rP=%d, nNet=%d]\n",
-					((MS_Association*)gl->data)->ms_assocId, ((MS_Association*)gl->data)->localPort,
-					((MS_Association*)gl->data)->remotePort, ((MS_Association*)gl->data)->noOfNetworks); 
-
-	}
-	gl = NULL;
-	for(gl = slaveAssociationList; gl != NULL; gl=gl->next)
-	{
-		printf("afte enter GList: assoc[id=%d lP=%d, rP=%d, nNet=%d]\n",
-					((MS_Association*)gl->data)->ms_assocId, ((MS_Association*)gl->data)->localPort,
-					((MS_Association*)gl->data)->remotePort, ((MS_Association*)gl->data)->noOfNetworks); 
-	}
-    return 0;
+    mdi_displayList(masterAssociationList);
+	mdi_displayList(slaveAssociationList);
+	return 0;
 }                              /* end: mdi_newMSAssociation */
 
 

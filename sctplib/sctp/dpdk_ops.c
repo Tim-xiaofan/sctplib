@@ -14,7 +14,6 @@ int dpdk_ops(int argc, char *argv[])
 {
 	/*dpdk eal init*/
 	int ret = 0;
-	int i;
 	if(argv == NULL)
 	{
 		printf("argv == NULL");

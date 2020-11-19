@@ -518,6 +518,7 @@ int adl_str2sockunion(guchar *str, union sockunion *su)
 	return -1;
 }
 
+/*@return 1 for success, 0 for failed*/
 int adl_sockunion2str(union sockunion *su, guchar *buf, size_t len)
 {
 	char ifnamebuffer[IFNAMSIZ];

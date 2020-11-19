@@ -70,6 +70,7 @@
 #define DEFAULT_MAX_BURST       4       /* maximum burst parameter */
 #define RTO_MAX                 60000
 
+#define SCTP_MAX_IP_LEN 46
 /**
  * This struct contains all data of an association. As far as other modules must know elements
  * of this struct, read functions are provided. No other module has write access to this structure.
@@ -89,6 +90,10 @@ typedef struct MS_ASSOCIATION
     short noOfNetworks;
     /** array of destination addresses */
     union sockunion *destinationAddresses;
+	/** number of local addresses*/
+	short noOfLocalAddresses;
+	/** array of local addresses*/
+	union sockunion *localAddresses;
 	/** association type(MASTER or SLAVE)*/
 	int type;
 	/** recv ring*/
@@ -231,6 +236,15 @@ int mdi_updateMyAddressList(void);
    from the list of associations and stored in a private but static datastructure.
    Elements of this association data can be read by the following functions.
 */
+unsigned int mdi_associatex(unsigned short noOfOutStreams,
+                             unsigned char  destinationAddresses[][SCTP_MAX_IP_LEN],
+                             unsigned int   noOfDestinationAddresses,
+                             unsigned int   maxSimultaneousInits,
+                             unsigned short destinationPort,
+                             MS_Association *slave,
+							 short initID,
+							 void *ulp_data);
+
 
 
 /* The following functions return pointer to data of modules of the SCTP. As only these

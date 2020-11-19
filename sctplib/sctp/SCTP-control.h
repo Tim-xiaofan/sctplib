@@ -213,6 +213,12 @@ void sci_allChunksAcked(void);
 
 /*------------------- Functions called message by distribution to create and delete --------------*/
 
+void sci_associate(unsigned short noOfOutStreams,
+                   unsigned short noOfInStreams,
+                   union sockunion* destinationList,
+                   unsigned int numDestAddresses,
+                   gboolean withPRSCTP,
+				   short initCID);
 /* newSCTP_control allocates data for a new SCTP-Control instance
 */
 void *sci_newSCTP_control(void* sctpInstance);
