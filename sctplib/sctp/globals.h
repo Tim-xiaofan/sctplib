@@ -138,7 +138,7 @@
                                    for instance abort of an association. */
 #define ERROR_FATAL        1    /* recovery from error was not possible, the program exits. */
 
-#define Current_error_log_ 4    /* Defines the level up to which the errors are printed.
+#define Current_error_log_ 40    /* Defines the level up to which the errors are printed.
                                    ERROR_WARNING (4) means all events are printed.
                                    This parameter could also come from a command line option */
 

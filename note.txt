@@ -13,6 +13,7 @@
 	（2）MAESTER处理，同时发送给网元A。
 
 ----------------------------- 辅助控制结构MS_Association-----------------------------
+/*slave 和 master同属于这个结构体*/
 typedef struct MS_ASSOCIATION
 {
     /** The current ID of this association,
@@ -31,7 +32,9 @@ typedef struct MS_ASSOCIATION
     /** recv ring*/
     void *recv_ring;
     void *ms_assoc;
-    /** ms state（等待INIT ACK(M初始)，等待COOKIE ECHO(S)，等待COOKIE ACK(M), Working(MS), Init by master(S初始))*/
+    /** ms state（等待得到INIT ACK(M初始)，等待得到COOKIE ECHO(S)，等待得到COOKIE ACK(M), Working(MS), Init by master(S初始))
+        slave: NEED_INIT  NEED_COOKIE_ECHO HAS_ASSOCIATION
+        master: NEED_INIT_ACK NEED_COOKIE HAS_ASSOCIATION*/
     unsigned ms_state;
     gboolean deleted;
     /** marks an association for deletion */
@@ -44,21 +47,19 @@ typedef struct MS_ASSOCIATION
 SCTP Instance只使用local port作唯一标识；
 SCTP Instance使用使用local port作为key查找时，不存在需要立刻新建一个，因为要处理所有的sctp
 ----------------------------- 逻辑改动2-----------------------------
-1.收到一个INIT
-（1）做必要检查后，创建master association（等待INIT ACK）、slave association(Init by master)的控制结构，分别放入master队列和slave队列。
-此时master association作为作为网元A的服务端，需要回一个INIT ACK。
-注意：
-a.master association的remotePort=src_port, localPort=dest_port destinationAddresses=src_addr localAddresses=dest_addr
-b.slave association的remotePort=dest_port, localPort=src_port destinationAddresses=dest_addr localAddresses=src_addr
-（2）slave association作为作为网元B的客户端，需要如何向网元B发送INIT？
-INIT从何而来？直接使用现有的INIT。怎么发？直接ring，不行，超时重发没有。
-参考test_tool作为客户端发起偶联的过程：
-a.创建偶联控制块：
+1.收到INIT
+（1）做必要检查后，创建master、slave的控制结构，分别放入master队列和slave队列。
+a.master:remotePort=src_port, localPort=dest_port, destinationAddresses=src_addr INIT的option部分地址, localAddresses=dest_addr
+b.slave:remotePort=dest_port, localPort=src_port, destinationAddresses=dest_addr, localAddresses=src_addr + INIT的option部分地址
+c.设置master的状态为NEED_INIT_ACK, slave状态为NEED_INIT
+其中src_port、dest_port来自SCTP common head
+（2）以slave为基础，创建偶联控制块Association B，作为网元B的客户端（即active端），向网元B发送INIT，发起偶联。
+a.使用新编写的函数，创建偶联控制块Aassociation B：
+设置本地IP、本地端口、远端IP端口、远端端口、初始化path management、bundling和SCTP-control
 /**
- *  establish an Association
+ *  Internal function only called by mdi_associatex 
+ *  establish an Association but bot scan local addresses 
  *  This function allocates memory for a new association.
- *  For the active sideof an association, this function is called when ULP calls Associate（主动端由ULP直接调用）
- *  For the passive side this function is called when a valid cookie message is received.（被动端SCTP control被动调用）
  *  It also creates all the modules path management, bundling and SCTP-control.
  *  The rest of the modules are created with mdi_initAssociation.
  *  The created association is put into the list of associations.
@@ -70,38 +71,47 @@ a.创建偶联控制块：
  *  @param  primaryDestinitionAddress   index of the primary address
  *  @param  noOfDestinationAddresses    number of addresses the peer has
  *  @param  destinationAddressList      pointer to the array of peer's addresses
+ *  @param  noOfLocalAddresses          number of addresses self has
+ *  @param  localAddressList            pointer to the array of self's addresses
+ *  @param  ms_assoc                    pointer to struct MS_Association that used when close Association
  *  @return 0 for success, else 1 for failure
  */
-unsigned short
-mdi_newAssociation(void*  sInstance,
+static unsigned short
+newAssociation(void*  sInstance,
                    unsigned short local_port,
                    unsigned short remote_port,
                    unsigned int tagLocal,
                    short primaryDestinitionAddress,
                    short noOfDestinationAddresses,
-                   union sockunion *destinationAddressList)
-修改：
-unsigned short
-mdi_newAssociationEx(void*  sInstance,/*slave association的localPort在链表中查找 */
-                   unsigned short local_port,/*slave association的localPort*/
-                   unsigned short remote_port,/*slave association的remotePort*/
-                   unsigned int tagLocal,/*?*/
-                   short primaryDestinitionAddress,/*?*/
-                   short noOfDestinationAddresses,/*slave association的noOfNetworks*/
-                   union sockunion *destinationAddressList/*slave association的destinationAddresses*/
-                   MS_Association *slave_assoc)/*pointer to slave , used to shutdown*/
-完成工作：创建偶联控制块
-b.初始化偶联，启动偶联
-void scu_associate(unsigned short noOfOutStreams,
+                   union sockunion *destinationAddressList,
+                   short noOfLocalAddresses,
+                   union sockunion *localAddressList,
+                   void ms_assoc)
+b.使用新编写的函数，初始化偶联的其他模块:
+发送INIT、保存INIT以备重发、启动计时器T1-init timer、更新偶联AssociationB状态为COOKIE-WAIT、更新slave状态为NEED_COOKIE_ECHO
+/**
+ * This function is called to initiate the setup an association.
+ * The local tag and the initial TSN are randomly generated.
+ * Together with the parameters of the function, they are used to create the init-message.
+ * This data are also stored in a newly created association-record.
+ *
+ * @param noOfOutStreams        number of send streams.
+ * @param noOfInStreams         number of receive streams.
+ * @param destinationList       
+ * @param numDestAddresses
+ * @param withPRSCTP
+ * @param initCID               the index of INIT provied（现成的INIT）
+ */
+void sci_associate(unsigned short noOfOutStreams,
                    unsigned short noOfInStreams,
                    union sockunion* destinationList,
                    unsigned int numDestAddresses,
-                   gboolean withPRSCTP)
-修改：？
-完成工作：发送INIT、启动计时器T1-init timer、进入COOKIE-WAIT状态
-（3）同时修改对应slave association状态为等待COOKIE ECHO，表示（丢失问题？）。
-注意：此时slave association的remotePort、noOfNetworks、destinationAddresses并未初始化，因为目前未得到A网元的任何信息（IP、端口）。
-2.收到一个INTT ACK，初始化slave association的remotePort、noOfNetworks、destinationAddresses。
-根据接收ring，选择发送ring，发送给网元B
+                   gboolean withPRSCTP,
+                   short initCID)
+
+2.INTT ACK
+（1）a.偶联控制块Association B根据自身状态处理；
+（2）a.更新master association:localAddresses+=INIT ACK的option部分地址；
+b.发送INIT ACK。INIT ACK是现成的，那要怎么发？（计时器、保存、超时重发等等）
 2.MASTER收到COOKIE ECHO需要入队偶联队列（new A）
 3.SLAEVER收到COOKIE ACK需要入队偶联队列(new B)

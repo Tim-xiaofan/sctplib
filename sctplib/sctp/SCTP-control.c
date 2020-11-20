@@ -122,6 +122,7 @@ static void sci_timer_expired(TimerID timerID, void *associationIDvoid, void *un
 pointer to the current controller structure. Only set when association exists.
 */
 static SCTP_controlData *localData;
+static MS_Association *msLocalData;
 
 
 /* ------------------ Function Implementations ---------------------------------------------------*/
@@ -661,7 +662,7 @@ int sctlr_init(SCTP_init * init)
     guint16 nlAddresses;
     union sockunion lAddresses[MAX_NUM_ADDRESSES];
     guint16 nrAddresses;
-    union sockunion rAddresses[MAX_NUM_ADDRESSES];/* remote addr */
+    union sockunion rAddresses[MAX_NUM_ADDRESSES];/* to be master's dest_addr , slave's local_addr*/
     union sockunion last_source;
 
     ChunkID initCID;
@@ -740,11 +741,14 @@ int sctlr_init(SCTP_init * init)
         /* DO_5_1_B_INIT : Normal case, no association exists yet */
 		/* create Master TCB and it's Slave TCB */
 		
-		/*gather ip addr in INIT, slave as active peer, must store all ip addr given network cell A*/
+		/*gather ip addr in INIT, slave as active peer, must store all ip addr given network cell A
+		  slave must look like cell A(active), master must look like cell B */
 		nrAddresses = ch_IPaddresses(initCID, supportedTypes, rAddresses, &peerSupportedTypes, &last_source);
+		printf("nrAddresses = %d\n", nrAddresses);
 		supportedTypes = mdi_getSupportedAddressTypes();
         if ((supportedTypes & peerSupportedTypes) == 0)
             error_log(ERROR_FATAL, "BAKEOFF: Program error, no common address types in sctlr_init()");
+		/*sctp common head's dest_port, src_port*/
 		noSuccess = mdi_newMasterAssociation(mdi_readLastDestPort(), mdi_readLastFromPort(), nrAddresses, &last_source, mdi_readLastRecvRing());
 		if (noSuccess)
 		{
@@ -771,25 +775,21 @@ int sctlr_init(SCTP_init * init)
 
 			event_logii(INTERNAL_EVENT_0, "get a slave assoc[%d], with master assoc[%d]", 
 						((MS_Association *)masterAssociation->ms_assoc)->ms_assocId, masterAssociation->ms_assocId);
-			guchar destAddress[SCTP_MAX_IP_LEN];
-			if(adl_sockunion2str(((MS_Association *)masterAssociation->ms_assoc)->destinationAddresses, destAddress, SCTP_MAX_IP_LEN) == 0)
-			{
-				error_log(ERROR_MAJOR, "adl_sockunion2str err");
-				return return_state;
-			}
+			MS_Association *slave = (MS_Association *)masterAssociation->ms_assoc;
 			if(mdi_associatex(ch_noOutStreams(initCID), 
-						&destAddress, 
-						((MS_Association *)masterAssociation->ms_assoc)->noOfNetworks, 
-						1, 
-						((MS_Association *)masterAssociation->ms_assoc)->remotePort,
-						(MS_Association *)masterAssociation->ms_assoc, 
-						initCID,
-						NULL) == 0)
+						slave->noOfNetworks, 
+						slave->destinationAddresses, 
+						slave->remotePort,
+						slave->noOfLocalAddresses, 
+						slave->localAddresses,
+						slave->localPort,
+						1, slave, initCID, NULL) == 0)
 			{
 				error_log(ERROR_MAJOR, "associate faile");
 				return return_state;
 			}
 			event_log(INTERNAL_EVENT_0, "*******************creat and init a Association TCB");
+			return_state = STATE_STOP_PARSING; /* to stop parsing without actually removing it */
 		}
         /* DO_5_1_B_INIT : Normal case, no association exists yet */
         /* save a-sides init-tag from init-chunk to be used as a verification tag of the sctp-
@@ -1078,17 +1078,27 @@ gboolean sctlr_initAck(SCTP_init * initAck)
     }
 
     state = localData->association_state;
+	if((msLocalData = (MS_Association *) mdi_readMSassoc()) == NULL)
+	{
+		ch_forgetChunk(initAckCID);
+		error_log(ERROR_MAJOR, "sctlr_initAck: read ms_add falied");
+		return return_state;
+	}
 
     switch (state) {
     case COOKIE_WAIT:
 
         event_log(EXTERNAL_EVENT, "event: initAck in state COOKIE_WAIT");
-
-        /* Set length of chunk to HBO !! */
+		if(msLocalData->ms_state !=SLAVE_NEED_COOKIE_ECHO)
+		{
+			error_log(ERROR_MAJOR, "Association B at COOKIE_WAIT, but slave not at SLAVE_NEED_COOKIE_ECHO");
+			return return_state;
+		}
+        /* Set length of chunk to HBO(host byte order) !! */
         initCID = ch_makeChunk((SCTP_simple_chunk *) localData->initChunk);
 
         /* FIXME: check also the noPeerOutStreams <= noLocalInStreams */
-        if (ch_noOutStreams(initAckCID) == 0 || ch_noInStreams(initAckCID) == 0 || ch_initiateTag(initAckCID) == 0) {
+        if (ch_noOutStreams(initAckCID) == 0 || ch_noInStreams(initAckCID) == 0 || ch_initiateTag(initAckCID) == 0) {/*abort*/
             if (localData->initTimer != 0) {
                 sctp_stopTimer(localData->initTimer);
                 localData->initTimer = 0;
@@ -1126,6 +1136,10 @@ gboolean sctlr_initAck(SCTP_init * initAck)
         supportedTypes = mdi_getSupportedAddressTypes();
         /* retrieve addresses from initAck */
         ndAddresses = ch_IPaddresses(initAckCID, supportedTypes, dAddresses, &peerSupportedTypes, &destAddress);
+		/* update master's local addresses*/
+		mdi_updateMasterLocalAddr((MS_Association *) msLocalData->ms_assoc, ndAddresses, dAddresses);
+		event_log(EXTERNAL_EVENT, "after update");
+		mdi_displayMasterList();
 
         mdi_writeDestinationAddresses(dAddresses, ndAddresses);
 
@@ -2396,18 +2410,31 @@ void sci_associate(unsigned short noOfOutStreams,
         error_log(ERROR_MAJOR, "read SCTP-control failed");
         return;
     }
-
+	if((msLocalData = (MS_Association *) mdi_readMSassoc()) == NULL)
+	{
+        error_log(ERROR_MAJOR, "read ms_assoc failed");
+        return;
+	}
     state = localData->association_state;
 
     switch (state) {
     case CLOSED:
         event_log(EXTERNAL_EVENT, "event: assocatiate in state CLOSED");
-
+		if(msLocalData->ms_state != SLAVE_NEED_INIT)
+		{
+			error_log(ERROR_MAJOR, "attempt to send INIT when slave'state is not SLAVE_NEED_INIT");
+			return;
+		}
         /* store the number of streams */
         localData->NumberOfOutStreams = noOfOutStreams;
         localData->NumberOfInStreams = noOfInStreams;
         
-        localData->initChunk = (SCTP_init *) ch_chunkString(initCID);
+        localData->initChunk = (SCTP_init *) ch_chunkString(initCID);/*store INIT for retransmission later*/
+		if(localData->initChunk == NULL)
+		{
+			error_log(ERROR_FATAL, "cannot keep INIT for retransmission");
+			return;
+		}
         ch_forgetChunk(initCID);
 
         /* send init chunk */
@@ -2431,6 +2458,7 @@ void sci_associate(unsigned short noOfOutStreams,
                                                (void *) &localData->associationID, NULL);
 
         state = COOKIE_WAIT;
+		msLocalData->ms_state = SLAVE_NEED_COOKIE_ECHO;
         break;
     default:
         error_logi(EXTERNAL_EVENT_X, "Erroneous Event : associate called in state %u", state);

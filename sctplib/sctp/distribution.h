@@ -236,17 +236,17 @@ int mdi_updateMyAddressList(void);
    from the list of associations and stored in a private but static datastructure.
    Elements of this association data can be read by the following functions.
 */
-unsigned int mdi_associatex(unsigned short noOfOutStreams,
-                             unsigned char  destinationAddresses[][SCTP_MAX_IP_LEN],
+unsigned int mdi_associatex( unsigned short noOfOutStreams,
                              unsigned int   noOfDestinationAddresses,
-                             unsigned int   maxSimultaneousInits,
+                             union sockunion  *destinationAddresses,
                              unsigned short destinationPort,
+							 unsigned short	noOfLocalAddresses,
+							 union sockunion *localAddresses,
+							 unsigned short localPort,
+                             unsigned int   maxSimultaneousInits,
                              MS_Association *slave,
 							 short initID,
 							 void *ulp_data);
-
-
-
 /* The following functions return pointer to data of modules of the SCTP. As only these
    modules know the exact type of these data structures, so the returned pointer are
    of type void.
@@ -264,6 +264,8 @@ unsigned int mdi_associatex(unsigned short noOfOutStreams,
  */
 void *mdi_readFlowControl(void);
 
+/*@return: the pointer to ms_assoc*/
+void *mdi_readMSassoc(void);
 
 
 /*
@@ -463,6 +465,12 @@ unsigned short mdi_newMasterAssociation(unsigned short local_port,
                    short noOfDestinationAddresses,
                    union sockunion *destinationAddressList,
 				   void *recv_ring);
+
+int mdi_updateMasterLocalAddr(MS_Association* master, 
+			unsigned int noOfLocalAddresses, 
+			union sockunion *localAddresses);
+
+void mdi_displayMasterList(void);
 
 /*------------------- Functions to create and delete associations --------------------------------*/
 

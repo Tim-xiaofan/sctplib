@@ -143,11 +143,12 @@ SCTP_message;
 #define SKIP_CHUNK_WITH_ERROR(chunk_id)         (((guint8)chunk_id & 0xC0)==0xC0))
 
 /**************************** MASTER SLAVE definitions ******************************************/
-#define MS_INIT_ACK_WAIT	0
-#define MS_COOKIE_ECHO_WAIT 1
-#define MS_COOKIE_ACK_WAIT	2
-#define MS_INIT_BY_MASTER	3
-
+#define SLAVE_NEED_INIT 0
+#define SLAVE_NEED_COOKIE_ECHO 1 
+#define SLAVE_HAS_ASSOCIATION 2
+#define MASTER_NEED_INIT_ACK 0 
+#define MASTER_NEED_COOKIE 1
+#define MASTER_HAS_ASSOCIATION 2
 /*--------------------------- common chunk header -------------------------------------------*/
 
 typedef struct SCTP_CHUNK_HEADER
