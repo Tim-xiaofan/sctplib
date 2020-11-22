@@ -78,10 +78,14 @@
  */
 typedef struct MS_ASSOCIATION
 {
-    /** The current ID of this association,
+    /** The current ID of this ms association,
         it is used as a key to find a association in the list,
         and never changes in the  live of the association  */
 	unsigned int ms_assocId;
+    /** The local tag of this association. */
+    unsigned int tagLocal;
+    /** The tag of remote side of this association */
+    unsigned int tagRemote;
     /** the local port number of this association. */
     unsigned short localPort;
     /** the remote port number of this association. */
@@ -94,6 +98,11 @@ typedef struct MS_ASSOCIATION
 	short noOfLocalAddresses;
 	/** array of local addresses*/
 	union sockunion *localAddresses;
+    /** maximum number of incoming streams */
+    unsigned short noOfInStreams;
+    /** maximum number of outgoingng streams */
+    unsigned short noOfOutStreams;
+    /** here follow default parameters for instance initialization */
 	/** association type(MASTER or SLAVE)*/
 	int type;
 	/** recv ring*/
@@ -236,15 +245,8 @@ int mdi_updateMyAddressList(void);
    from the list of associations and stored in a private but static datastructure.
    Elements of this association data can be read by the following functions.
 */
-unsigned int mdi_associatex( unsigned short noOfOutStreams,
-                             unsigned int   noOfDestinationAddresses,
-                             union sockunion  *destinationAddresses,
-                             unsigned short destinationPort,
-							 unsigned short	noOfLocalAddresses,
-							 union sockunion *localAddresses,
-							 unsigned short localPort,
-                             unsigned int   maxSimultaneousInits,
-                             MS_Association *slave,
+unsigned int mdi_associatex( unsigned int   maxSimultaneousInits, 
+							 MS_Association *slave,
 							 short initID,
 							 void *ulp_data);
 /* The following functions return pointer to data of modules of the SCTP. As only these
@@ -462,6 +464,7 @@ unsigned short mdi_clearAssociationData(void);
 /*------------------- Functions to create and delete MS associations --------------------------------*/
 unsigned short mdi_newMasterAssociation(unsigned short local_port,
                    unsigned short remote_port,
+				   unsigned int initiateTag,
                    short noOfDestinationAddresses,
                    union sockunion *destinationAddressList,
 				   void *recv_ring);

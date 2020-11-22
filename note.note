@@ -1,24 +1,40 @@
-默认网元A，为A端
-1.INIT 来自网元A
-	（1）MASTER处理，同时初始化一个SLAVE，把INIT交给SLAVE，等待SLAVE交付INIT ACK。
-	（2）SLAVE发送INIT给网元B,进入COOKIE WAITE状态。
-2.INTT ACK 来自网元B
-	（1）SLAVE处理，同时检查MASTER是否在等待INIT ACK，如果是交付给MATSTER，否则建立失败。然后等待MASTER交付COOKIE ACK。
-	（2）MASTER发送INTT ACK发送给给网元A。
-3.COOKIE ECHO 来自网元A
-	（1）MASTER处理，建立相应的偶联控制块，同时检查SLAVE是否在等待COOKIE ECHO，是交付给SLAVE，否则建立失败退出。等待SLAVE交付COOKIE ACK。
-	（2）SLAVE发送COOKIE ECHO发送给给网元B。
-4.COOKIE ACK来自网元B
-	（1）SLAVE处理，建立相应的偶联控制块，同时检查MASTER是否在等待COOKIE ACK，是交付给MASTER，否则报错退出。
-	（2）MAESTER处理，同时发送给网元A。
+----------------------------- 设想条件-----------------------------
+网元A的偶联A：IP（10.0.0.113、192.168.122.1）:端口（11001）：initTag（0xc1e19da3）
+网元B的偶联B：IP（10.64.0.118）：端口(2905)：initTag(0x1103face)
 
------------------------------ 辅助控制结构MS_Association-----------------------------
+----------------------------- 思路-----------------------------
+Acpy = A;
+Bcpy = B;
+在防火墙中建立偶联Acpy、Bcpy。其中A和Bcpy通信，B和Acpy通信。默认A为Active端。
+----------------------------- 方案-----------------------------
+由于我们获取了A、B建立偶联过程的所有的SCTP报文用来建立Bcpy和Bcpy，这与原来的SCTP协议栈完全不同，所以这里使用
+了一个辅助偶联控制块MS_Association来推进Bcpy和Bcpy的建立。并且这个过程中不需要创建任何报文，例如收到INIT，只能回收到的INIT ACK。
+1.INIT 来自网元A
+    （1）创建辅助偶联控制块master，和slave。
+	（2）master处理，不回复A, 而是等待INIT ACK的到来。
+	（3）slave将这个INIT给网元B，等待COOKIE_ECHO到来。
+    （4）以slave为基础创建偶联控制块Acpy
+2.INTT ACK 来自网元B
+	（1）slave和Acpy处理，不回复B，继续等待COOKIE_ECHO到来。
+	（2）master将INTT ACK发送给给网元A，转而等待COOKIE ACK的到来。
+3.COOKIE ECHO 来自网元A
+	（1）master处理，建立相应的偶联控制块Bcpy，不回复A，等待继续COOKIE ACK的到来。
+	（2）salve将COOKIE ECHO发送发送给给网元B。
+4.COOKIE ACK来自网元B
+	（1）slave和Acpy处理，Acpy建立完毕，slave更新状态为SLEEP
+	（2）master和Bcpy将COOKIE ACK发送给网元A，Bcpy建立完毕， master更新状态为SLEEP。
+
+#辅助偶联控制块结构MS_Association
 /*slave 和 master同属于这个结构体*/
 typedef struct MS_ASSOCIATION
 {
     /** The current ID of this association,
         it is used as a key to find a association in the list, */
     unsigned int ms_assocId;
+    /** The local tag of this association. */
+    unsigned int tagLocal;
+    /** The tag of remote side of this association */
+    unsigned int tagRemote;
     /** the local port number of this association. */
     unsigned short localPort;
     /** the remote port number of this association. */
@@ -32,9 +48,9 @@ typedef struct MS_ASSOCIATION
     /** recv ring*/
     void *recv_ring;
     void *ms_assoc;
-    /** ms state（等待得到INIT ACK(M初始)，等待得到COOKIE ECHO(S)，等待得到COOKIE ACK(M), Working(MS), Init by master(S初始))
-        slave: NEED_INIT  NEED_COOKIE_ECHO HAS_ASSOCIATION
-        master: NEED_INIT_ACK NEED_COOKIE HAS_ASSOCIATION*/
+    /** 
+    * slave: NEED_INIT  NEED_COOKIE_ECHO SLEEP
+    * master: NEED_INIT_ACK NEED_COOKIE SLEEP*/
     unsigned ms_state;
     gboolean deleted;
     /** marks an association for deletion */
@@ -42,20 +58,20 @@ typedef struct MS_ASSOCIATION
 队列如何标识一个MASTER和SLAVE：
  1.（local_port, remote_port, remote_ip, ass_type）;
  2.ms_assocId
-
------------------------------ 逻辑改动1-----------------------------
-SCTP Instance只使用local port作唯一标识；
-SCTP Instance使用使用local port作为key查找时，不存在需要立刻新建一个，因为要处理所有的sctp
+#改动SCTP Instance结构体
+1.不再有本地这个概念，取而代之的是cell A， cell B表示有一个实例在处理cell A， cell B之间的一个偶联。
+2.判断两个SCTP Instance是否相等只判断cell A = cell B？
 ----------------------------- 逻辑改动2-----------------------------
 1.收到INIT
-（1）做必要检查后，创建master、slave的控制结构，分别放入master队列和slave队列。
+（1）做必要检查后，创建master（118）、slave（113）的控制结构，分别放入master队列和slave队列。
 a.master:remotePort=src_port, localPort=dest_port, destinationAddresses=src_addr INIT的option部分地址, localAddresses=dest_addr
 b.slave:remotePort=dest_port, localPort=src_port, destinationAddresses=dest_addr, localAddresses=src_addr + INIT的option部分地址
 c.设置master的状态为NEED_INIT_ACK, slave状态为NEED_INIT
+d.设置master的tagRemote为0xc1e19da3，slave的tagLocal为0x1103face
 其中src_port、dest_port来自SCTP common head
-（2）以slave为基础，创建偶联控制块Association B，作为网元B的客户端（即active端），向网元B发送INIT，发起偶联。
-a.使用新编写的函数，创建偶联控制块Aassociation B：
-设置本地IP、本地端口、远端IP端口、远端端口、初始化path management、bundling和SCTP-control
+（2）以slave为基础，创建偶联控制块Acpy，作为网元B的客户端（即active端），向网元B发送INIT，发起偶联。
+a.使用新编写的函数，创建偶联控制块Acpy：
+设置本地IP、本地端口、远端IP端口、远端端口、本端tagLocal、初始化path management、bundling和SCTP-control
 /**
  *  Internal function only called by mdi_associatex 
  *  establish an Association but bot scan local addresses 
@@ -110,8 +126,8 @@ void sci_associate(unsigned short noOfOutStreams,
                    short initCID)
 
 2.INTT ACK
-（1）a.偶联控制块Association B根据自身状态处理；
-（2）a.更新master association:localAddresses+=INIT ACK的option部分地址；
-b.发送INIT ACK。INIT ACK是现成的，那要怎么发？（计时器、保存、超时重发等等）
+（1）a.偶联控制块Association B根据自身状态处理，其中COOKIE-WAIT状态本来需要回复COOKIE ECHO，现在不回复，而是等到有现成的COOKIE ECHO到来再回复。
+（2）a.更新master association:localAddresses=INIT ACK的option部分地址；
+b.发送INIT ACK。INIT ACK是现成的，那要怎么发？（计时器、保存、超时重发等等）。
 2.MASTER收到COOKIE ECHO需要入队偶联队列（new A）
 3.SLAEVER收到COOKIE ACK需要入队偶联队列(new B)

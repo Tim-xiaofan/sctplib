@@ -86,4 +86,6 @@ sctplib/programs/tags
 core*
 sctplib/sctp/tags
 tags
+*.out
+*.txt
 

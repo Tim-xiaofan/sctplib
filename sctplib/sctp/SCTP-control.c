@@ -742,14 +742,17 @@ int sctlr_init(SCTP_init * init)
 		/* create Master TCB and it's Slave TCB */
 		
 		/*gather ip addr in INIT, slave as active peer, must store all ip addr given network cell A
-		  slave must look like cell A(active), master must look like cell B */
+		 *slave must look like cell B, master must look like cell A */
+        supportedTypes = mdi_getSupportedAddressTypes();
 		nrAddresses = ch_IPaddresses(initCID, supportedTypes, rAddresses, &peerSupportedTypes, &last_source);
-		printf("nrAddresses = %d\n", nrAddresses);
+		event_logi(EXTERNAL_EVENT, "there are %d addrs in INIT", nrAddresses);
 		supportedTypes = mdi_getSupportedAddressTypes();
         if ((supportedTypes & peerSupportedTypes) == 0)
             error_log(ERROR_FATAL, "BAKEOFF: Program error, no common address types in sctlr_init()");
-		/*sctp common head's dest_port, src_port*/
-		noSuccess = mdi_newMasterAssociation(mdi_readLastDestPort(), mdi_readLastFromPort(), nrAddresses, &last_source, mdi_readLastRecvRing());
+		/*sctp common head's dest_port, src_port
+		 *mater looks like cell B and slave looks like cell A
+		 *now: got INIT from A, as master dest*/
+		noSuccess = mdi_newMasterAssociation(mdi_readLastFromPort(), mdi_readLastDestPort(), ch_initiateTag(initCID), nrAddresses, rAddresses, mdi_readLastRecvRing());
 		if (noSuccess)
 		{
 				/* new association could not be entered in the list of associations */
@@ -776,14 +779,8 @@ int sctlr_init(SCTP_init * init)
 			event_logii(INTERNAL_EVENT_0, "get a slave assoc[%d], with master assoc[%d]", 
 						((MS_Association *)masterAssociation->ms_assoc)->ms_assocId, masterAssociation->ms_assocId);
 			MS_Association *slave = (MS_Association *)masterAssociation->ms_assoc;
-			if(mdi_associatex(ch_noOutStreams(initCID), 
-						slave->noOfNetworks, 
-						slave->destinationAddresses, 
-						slave->remotePort,
-						slave->noOfLocalAddresses, 
-						slave->localAddresses,
-						slave->localPort,
-						1, slave, initCID, NULL) == 0)
+			/*start an association*/
+			if(mdi_associatex(1, slave, initCID, NULL) == 0)
 			{
 				error_log(ERROR_MAJOR, "associate faile");
 				return return_state;

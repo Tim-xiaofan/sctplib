@@ -206,9 +206,9 @@ glib_LIBS="$GLIB_LIBS"
 AC_SUBST(glib_LIBS)
 
 # #####ADD DPDK LIB###
-DPDK_CFLAGS=`pkg-config --cflags libdpdk`
+DPDK_CFLAGS=`pkg-config --cflags libdpdk -mssse3`
 DPDK_LIBS=`pkg-config --libs libdpdk`
-CFLAGS="$CFLAGS $DPDK_CFLAGS"
+CFLAGS="$CFLAGS $DPDK_CFLAGS -mssse3"
 CPPFLAGS="$CPPFLAGS $DPDK_CFLAGS"
 CXXFLAGS="$CXXFLAGS $DPDK_CFLAGS"
 dpdk_LIBS="$DPDK_LIBS"
