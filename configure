@@ -13562,7 +13562,7 @@ glib_LIBS="$GLIB_LIBS"
 
 
 # #####ADD DPDK LIB###
-DPDK_CFLAGS=`pkg-config --cflags libdpdk -mssse3`
+DPDK_CFLAGS=`pkg-config --cflags libdpdk`
 DPDK_LIBS=`pkg-config --libs libdpdk`
 CFLAGS="$CFLAGS $DPDK_CFLAGS -mssse3"
 CPPFLAGS="$CPPFLAGS $DPDK_CFLAGS"

@@ -320,7 +320,6 @@ struct SCTP_Library_Parameters {
 }SCTP_LibraryParameters;
 
 
-
 typedef
 /**
  * This struct contains some parameters that may be set or
@@ -533,7 +532,8 @@ int sctp_registerInstance(unsigned short localPort,
                           unsigned int   noOfLocalAddresses,
                           unsigned char  localAddressList[SCTP_MAX_NUM_ADDRESSES][SCTP_MAX_IP_LEN],
                           SCTP_ulpCallbacks ULPcallbackFunctions);
-
+/*set ulp callbacks functions*/
+void sctp_registerULPcallbackFunctions(SCTP_ulpCallbacks ULPcallbackFunctions);
 int sctp_unregisterInstance(unsigned short instance_name);
 
 

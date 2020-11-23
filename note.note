@@ -61,6 +61,7 @@ typedef struct MS_ASSOCIATION
 #改动SCTP Instance结构体
 1.不再有本地这个概念，取而代之的是cell A， cell B表示有一个实例在处理cell A， cell B之间的一个偶联。
 2.判断两个SCTP Instance是否相等只判断cell A = cell B？
+3.一个数据报到来时没有相应的SCTP Instance处理，就建立一个。
 ----------------------------- 逻辑改动2-----------------------------
 1.收到INIT
 （1）做必要检查后，创建master（118）、slave（113）的控制结构，分别放入master队列和slave队列。
