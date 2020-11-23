@@ -425,7 +425,7 @@ gint equalCells(gconstpointer a, gconstpointer b)
 {
     int i,j;
 
-    event_logii(VVERBOSE, "equalCells: checking cell A[id=%d] and cell B[id=%d]",
+    event_logii(INTERNAL_EVENT_0, "equalCells: checking cell A[id=%d] and cell B[id=%d]",
         ((Cell*)a)->cellId,((Cell*)b)->cellId);
 
     if (((Cell*)a)->localPort == ((Cell *)b)->localPort)
@@ -433,10 +433,10 @@ gint equalCells(gconstpointer a, gconstpointer b)
         for (i = 0; i < ((Cell *)a)->noOfLocalAddresses; i++)
             for (j = 0; j < ((Cell *)b)->noOfLocalAddresses; j++)
 			{
-                event_logii(VVERBOSE, "equalAssociations: checking address A[%d] address B[%d]",i,j);
+                event_logii(INTERNAL_EVENT_0, "equalAssociations: checking address A[%d] address B[%d]",i,j);
                 if (adl_equal_address(&(((Cell *)a)->localAddresses[i]),&(((Cell*)b)->localAddresses[j])) == TRUE) 
 				{
-                        event_log(VVERBOSE, "equalAssociations: found TWO equal cells!");
+                        event_log(INTERNAL_EVENT_0, "equalAssociations: found TWO equal cells!");
                         return 0;
                 }
             }
@@ -496,14 +496,15 @@ int mdi_createCellByTransportAddress(unsigned short localPort,
 		return -1;
 	}
 	memcpy(cell->localAddresses, localAddresses, noOfLocalAddresses * sizeof(union sockunion));
+	cell->noOfLocalAddresses = noOfLocalAddresses;
 	cell->cellId = mdi_getUnusedCellId();
+	event_logii(INTERNAL_EVENT_0, "enter cell[id = %u, nAddr = %u] into list ", cell->cellId, cell->noOfLocalAddresses);
 	cellList = g_list_insert_sorted(cellList, cell, &CompareCellIds);
 	return cell->cellId;
 }
 
 void mdi_displayCell(const Cell *c)
 {
-	event_log(EXTERNAL_EVENT, "*******************Cell");
 	printf("cellId[%u] with %d local addrs : ", c->cellId, c->noOfLocalAddresses);
 	int i;
 	for(i = 0; i < c->noOfLocalAddresses; i++)
@@ -519,51 +520,42 @@ void mdi_displayCellList(GList *list)
 {
 	event_log(INTERNAL_EVENT_0, "******************CellList");
 	GList *gl = NULL;
-	for(gl = list; gl; gl = list->next)
+	for(gl = list; gl; gl = gl->next)
 	  mdi_displayCell((Cell *)gl->data);
 }
 /**
  *@return 0 for success, -1 for fail*/
-//int mdi_cellCpy(Cell *dst, Cell *src)
-//{
-//	if(src == NULL || dst == NULL)
-//	{
-//		error_log(ERROR_FATAL, "src or dst is null");
-//		dst = NULL;
-//		return -1;
-//	}
-//	else if(src->localAddresses == NULL || src->destinationAddresses == NULL)
-//	{
-//		error_log(ERROR_FATAL, "src cannot be null");
-//		dst = NULL;
-//		return -1;
-//	}
-//	else
-//	{
-//		dst->localAddresses = malloc(sizeof(union sockunion) * src->noOfLocalAddresses);
-//		if(!(dst->localAddresses))
-//		{
-//			error_log_sys(ERROR_MAJOR, (short)errno);
-//			return -1;
-//		}
-//		dst->destinationAddresses = malloc(sizeof(union sockunion) * src->noOfNetworks);
-//		if(!dst->destinationAddresses)
-//		{
-//			error_log_sys(ERROR_MAJOR, (short)errno);
-//			return -1;
-//		}
-//		dst->localPort = src->localPort;
-//		dst->remotePort = src->remotePort;
-//		dst->noOfLocalAddresses = src->noOfLocalAddresses;
-//		memcpy(dst->localAddresses, src->localAddresses, 
-//					sizeof(union sockunion) * src->noOfLocalAddresses);
-//		dst->noOfNetworks = src->noOfNetworks;
-//		memcpy(dst->destinationAddresses, src->destinationAddresses, 
-//					sizeof(union sockunion) * src->noOfNetworks);
-//		return 0;
-//	}
-//	return -1;
-//}
+int mdi_cellCpy(Cell *dst, Cell *src)
+{
+	if(src == NULL || dst == NULL)
+	{
+		error_log(ERROR_FATAL, "src or dst is null");
+		dst = NULL;
+		return -1;
+	}
+	else if(src->localAddresses == NULL || src->noOfLocalAddresses ==0)
+	{
+		error_log(ERROR_FATAL, "src's addrs is incalid");
+		dst = NULL;
+		return -1;
+	}
+	else
+	{
+		dst->localAddresses = malloc(sizeof(union sockunion) * src->noOfLocalAddresses);
+		if(!(dst->localAddresses))
+		{
+			error_log_sys(ERROR_MAJOR, (short)errno);
+			return -1;
+		}
+		dst->localPort = src->localPort;
+		dst->noOfLocalAddresses = src->noOfLocalAddresses;
+		dst->cellId = src->cellId;
+		memcpy(dst->localAddresses, src->localAddresses, 
+					sizeof(union sockunion) * src->noOfLocalAddresses);
+		return 0;
+	}
+	return -1;
+}
 
 void mdi_displayMasterList(void)
 {
@@ -699,12 +691,16 @@ gint CheckForAddressInInstanceWithoutLocaladdr(gconstpointer a, gconstpointer b)
 }
 gint CompareCellIds(gconstpointer a, gconstpointer b)
 {
+	//printf("cellId %u = cellId %u ?\n", ((Cell*)a)->cellId, ((Cell*)b)->cellId);
     if ((((Cell*)a)->cellId) < ((Cell*)b)->cellId) return -1;
     else if ((((Cell*)a)->cellId) > ((Cell*)b)->cellId) return 1;
     else return 0;
 }
+
 gint CompareInstanceNames(gconstpointer a, gconstpointer b)
 {
+	//printf("sctpInstanceName %u = sctpInstanceName %u ?\n",
+				//((SCTP_instance*)a)->sctpInstanceName, ((SCTP_instance*)b)->sctpInstanceName);
     if ((((SCTP_instance*)a)->sctpInstanceName) < ((SCTP_instance*)b)->sctpInstanceName) return -1;
     else if ((((SCTP_instance*)a)->sctpInstanceName) > ((SCTP_instance*)b)->sctpInstanceName) return 1;
     else return 0;
@@ -733,7 +729,7 @@ SCTP_instance* retrieveInstanceByCells(Cell *ca, Cell *cb)
 {
 	if(ca == NULL || cb == NULL)
 	{
-		event_log(INTERNAL_EVENT_0, "aptem to retrive instance with null cell");
+		event_log(INTERNAL_EVENT_0, "aptempt to retrive instance with null cell");
 		return NULL;
 	}
     SCTP_instance* instance;
@@ -785,7 +781,7 @@ Cell *retrieveCell(unsigned short cellId)
     event_logi(INTERNAL_EVENT_0, "retrieving cell %u from list", cellId);
 
     temporary.cellId = cellId;
-    result = g_list_find_custom(InstanceList, &temporary, &CompareCellIds);
+    result = g_list_find_custom(cellList, &temporary, &CompareCellIds);
     if (result != NULL) {
        cell = (Cell*)result->data;
     }
@@ -2183,7 +2179,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                    int bufferLength, union sockunion * source_addr,
                    union sockunion * dest_addr)
 {/*start mdi*/
-	printf("\n\n-------enter mdi_receiveMessageAtRing-------\n");
 	zlog_data(buffer, bufferLength);
 	SCTP_message *message;
     SCTP_init_fixed *initChunk = NULL;
@@ -2234,6 +2229,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
        For instance initAck or cookieAck. */
     lastFromPort = ntohs(message->common_header.src_port);
     lastDestPort = ntohs(message->common_header.dest_port);
+	mdi_displayCellList(cellList);
 	ca = retrieveCellByTransportAddress(lastFromPort, 1, lastFromAddress);
 	int cellIdA;
 	if(ca == NULL)
@@ -2266,7 +2262,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 			return;
 		}
 	}
-	exit(-1);
     if (lastFromPort == 0 || lastDestPort == 0) {
         error_log(ERROR_MINOR, "received DG with invalid (i.e. 0) ports");
         lastFromAddress = NULL;
@@ -2320,6 +2315,8 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 
 
     /* Retrieve association from list  */
+	ca = retrieveCell(cellIdA);
+	cb = retrieveCell(cellIdB);
     currentAssociation = retrieveAssociationByTransportAddress(lastFromAddress, lastFromPort, lastDestPort);
     if (currentAssociation != NULL) {
         /* meaning we MUST have an instance with no fixed port */
@@ -5536,6 +5533,8 @@ static int mdi_createInstanceByCells(Cell *cellA, Cell *cellB)
 		mdi_displayCell(cellB);
 		return SCTP_PARAMETER_PROBLEM;
 	}
+	mdi_displayCell(cellA);
+	mdi_displayCell(cellB);
 	with_ipv4 = TRUE;
     event_logi(VERBOSE, "mdi_createInstanceByCells : with_ipv4 : %s ",(with_ipv4==TRUE)?"TRUE":"FALSE" );
     if ((with_ipv4 != TRUE)/*既不是ipv4也不是ipv6，即出错*/
@@ -5558,16 +5557,11 @@ static int mdi_createInstanceByCells(Cell *cellA, Cell *cellB)
     /* 实例的Cell参数 */
 	sctpInstance->cellA = malloc(sizeof(Cell));
 	sctpInstance->cellB = malloc(sizeof(Cell));
-	if(!sctpInstance->cellA || !sctpInstance->cellB)
-	{
-		error_log_sys(ERROR_MAJOR, (short)errno);
-        sctpInstance = old_Instance;
-        currentAssociation = old_assoc;
-        LEAVE_LIBRARY("mdi_createInstanceByCells");
-        return SCTP_OUT_OF_RESOURCES;
-	}
-	sctpInstance->cellA = malloc(sizeof(Cell));
-	sctpInstance->cellB = malloc(sizeof(Cell));
+	mdi_cellCpy(sctpInstance->cellA, cellA);
+	mdi_cellCpy(sctpInstance->cellB, cellB);
+	event_log(EXTERNAL_EVENT, "int sctpInstance");
+	mdi_displayCell(((Cell *)sctpInstance->cellA));
+	mdi_displayCell(((Cell *)sctpInstance->cellB));
     /*支持的地址类型*/
     sctpInstance->supportedAddressTypes = 0;
     if (with_ipv4) sctpInstance->supportedAddressTypes |= SUPPORT_ADDRESS_TYPE_IPV4;
