@@ -83,14 +83,6 @@ static int      checksumAlgorithm           = SCTP_CHECKSUM_ALGORITHM_CRC32C;
 static gboolean librarySupportsPRSCTP         = TRUE;
 static gboolean supportADDIP                = FALSE;
 /*------------------------Structure Definitions --------------------------------------------------*/
-
-typedef struct NET_CELL
-{
-	unsigned short cellId;
-	unsigned short localPort;
-	unsigned short noOfLocalAddresses;
-	union sockunion *localAddresses;
-}Cell;
 /**
  * This struct stores data of SCTP-instances.
  * Each SCTP-instances is related to one port and to
@@ -136,8 +128,6 @@ typedef struct SCTPINSTANCE
     unsigned int supportedAddressTypes;
     gboolean    supportsPRSCTP;
     gboolean    supportsADDIP;
-	void *cellA;
-	void *cellB;
    /*@}*/
 }
 SCTP_instance;
@@ -224,7 +214,6 @@ static GList* AssociationList = NULL;
  */
 static GList *masterAssociationList = NULL;
 static GList *slaveAssociationList = NULL;
-static GList *cellList = NULL;
 
 /**
  * Whenever an external event (ULP-call, socket-event or timer-event) this variable must
@@ -270,8 +259,6 @@ static unsigned short lastSCTP_instanceName = 1;
 static unsigned int nextAssocId = 1;
 static unsigned int nextMasterAssocId = 1;
 static unsigned int nextSlaveAssocId = 1;
-static unsigned int nextCellId = 1;
-
 /**
    initAck is sent to this address
    In this case, SCTP-control reads this address on reception of the cookie echo
@@ -307,7 +294,6 @@ static unsigned int numberOfSeizedPorts;
 
 /* ---------------------- Internal Function Prototypes ------------------------------------------- */
 unsigned short mdi_getUnusedInstanceName(void);
-static int mdi_createInstanceByCells(Cell *cellA, Cell *cellB);
 
 /* ------------------------- Function Implementations --------------------------------------------- */
 
@@ -344,18 +330,27 @@ newAssociation(void*  sInstance,
 				   short noOfLocalAddresses,
 				   union sockunion *localAddressList,
 				   void *ms_assoc);
-void mdi_displayCell(const Cell *c);
+static int mdi_createInstanceByTansportAddress(
+			unsigned short localPort,
+			unsigned short noOfLocalAddresses,
+			union sockunion *localAddresses);
 void mdi_displayInstanceList(GList *list)
 {
-	GList *gl = NULL;
+	GList *gl=NULL;
 	for(gl = list; gl; gl = gl->next)
 	{
 		SCTP_instance *tmp = (SCTP_instance *)gl->data;
 		event_log(EXTERNAL_EVENT, "*******************InstanceList");
-		printf("!!!!!Instance name[%u] cellA at %p, cellB at %p\n", 
-					tmp->sctpInstanceName, tmp->cellA, tmp->cellB);
-		mdi_displayCell((Cell *)tmp->cellA);
-		mdi_displayCell((Cell *)tmp->cellB);
+		printf("sctpInstance[%u] with %u local addrs:", 
+					tmp->sctpInstanceName, tmp->noOfLocalAddresses);
+		int i;
+		for(i = 0; i< tmp->noOfLocalAddresses; i++)
+		{
+			guchar buf[64];
+			adl_sockunion2str(&tmp->localAddressList[i], buf, 64);
+			printf("%s ", buf);
+		}
+		printf(" : %d\n", tmp->localPort);
 	}
 }
 void mdi_displayAssociationList(GList *list)
@@ -423,186 +418,6 @@ void mdi_displayMSassocList(GList *list)
 		printf("\n");
 	}
 }
-gint equalCells(gconstpointer a, gconstpointer b)
-{
-    int i,j;
-
-    event_logii(INTERNAL_EVENT_0, "equalCells: checking cell A[id=%d] and cell B[id=%d]",
-        ((Cell*)a)->cellId,((Cell*)b)->cellId);
-
-    if (((Cell*)a)->localPort == ((Cell *)b)->localPort)
-	{
-        for (i = 0; i < ((Cell *)a)->noOfLocalAddresses; i++)
-            for (j = 0; j < ((Cell *)b)->noOfLocalAddresses; j++)
-			{
-                event_logii(INTERNAL_EVENT_0, "equalAssociations: checking address A[%d] address B[%d]",i,j);
-                if (adl_equal_address(&(((Cell *)a)->localAddresses[i]),&(((Cell*)b)->localAddresses[j])) == TRUE) 
-				{
-                        event_log(INTERNAL_EVENT_0, "equalCells: found TWO equal cells!");
-                        return 0;
-                }
-            }
-       event_log(VVERBOSE, "equalCells: found NO equal cells !");
-       return 1;
-    }
-    event_log(VVERBOSE, "equalCells: found NO equal cells !");
-    return 1;
-}
-
-Cell *retrieveCellByTransportAddress(unsigned short localPort, 
-			unsigned short noOfLocalAddresses, 
-			union sockunion *localAddresses)
-{
-	Cell tmp;
-	tmp.localPort = localPort;
-	tmp.noOfLocalAddresses = noOfLocalAddresses;
-	tmp.localAddresses = localAddresses;
-    GList* result = NULL;
-    event_log(INTERNAL_EVENT_0, "retrieving cell by transport address from list");
-    result = g_list_find_custom(cellList, &tmp, equalCells);
-	if(result == NULL)
-	{
-		event_logi(INTERNAL_EVENT_0, "cell with port %u not in list", localPort);
-		return NULL;
-	}
-	else
-	{
-		event_logii(INTERNAL_EVENT_0, "find cell[%u] at %p in list",
-					((Cell*)result->data)->cellId, (Cell *)result->data);
-		return (Cell *)result->data;
-	}
-}
-
-unsigned short mdi_getUnusedCellId(void);
-gint CompareCellIds(gconstpointer a, gconstpointer b);
-
-void *mdi_newCellByTransportAddress(unsigned short localPort, 
-			unsigned short noOfLocalAddresses, 
-			union sockunion *localAddresses)
-{
-	if(localAddresses == NULL)
-	{
-	  error_log(ERROR_FATAL, "mdi_newCellByTransportAddress: null localAddresses");
-	  return NULL;
-	}
-	Cell *cell =  malloc(sizeof(Cell));
-	if(cell == NULL)
-	{
-		error_log_sys(ERROR_MAJOR, (short)errno);
-		return NULL;
-	}
-	cell->localPort = localPort;
-	cell->localAddresses = (union sockunion *)malloc(
-				noOfLocalAddresses * sizeof(union sockunion));
-	if(cell->localAddresses == NULL)
-	{
-		error_log_sys(ERROR_MAJOR, (short)errno);
-		return NULL;
-	}
-	memcpy(cell->localAddresses, localAddresses, noOfLocalAddresses * sizeof(union sockunion));
-	cell->noOfLocalAddresses = noOfLocalAddresses;
-	return (void *)cell;
-}
-
-int mdi_updateCellAddresses(Cell *cell, unsigned short noOfNewAddresses,
-			union sockunion *newAddresses)
-{
-	if(cell == NULL)
-	{
-		event_log(INTERNAL_EVENT_0, "mdi_updateCellAddresses:\
-					attempt to update null cell");
-		return -1;
-	}
-	if(noOfNewAddresses == 0 || newAddresses == NULL)
-	{
-		event_log(INTERNAL_EVENT_0, "mdi_updateCellAddresses:\
-					attempt to update cell with valid addrs");
-		return -1;
-	}
-	if(cell->localAddresses != NULL) free(cell->localAddresses);
-	cell->localAddresses = (union sockunion *)malloc(
-				sizeof(union sockunion) * noOfNewAddresses);
-	if(cell->localAddresses == NULL)
-	{
-		error_log_sys(ERROR_MAJOR, (short)errno);
-		return -1;
-	}
-	memcpy(cell->localAddresses, newAddresses, 
-				sizeof(union sockunion) * noOfNewAddresses);
-	cell->noOfLocalAddresses = noOfNewAddresses;
-	event_logii(INTERNAL_EVENT_0, "mdi_updateCellAddresses: \
-				update cell[%u] at %p success", cell->cellId, cell);
-	return 0;
-}
-
-int mdi_createCellByTransportAddress(unsigned short localPort, 
-			unsigned short noOfLocalAddresses, 
-			union sockunion *localAddresses)
-{
-	Cell *cell = (Cell *)mdi_newCellByTransportAddress(localPort, noOfLocalAddresses, localAddresses);
-	if(cell == NULL)return 0;
-	cell->cellId = mdi_getUnusedCellId();
-	event_logii(INTERNAL_EVENT_0, "enter cell[id = %u, nAddr = %u] into list ",
-				cell->cellId, cell->noOfLocalAddresses);
-	cellList = g_list_insert_sorted(cellList, cell, &CompareCellIds);
-	return cell->cellId;
-}
-
-void mdi_displayCell(const Cell *c)
-{
-	if(c == NULL)return;
-	printf("cellId[%u] with %d local addrs at %p: ", 
-				c->cellId, c->noOfLocalAddresses, c);
-	int i;
-	for(i = 0; i < c->noOfLocalAddresses; i++)
-	{
-		guchar buf[64];
-		adl_sockunion2str(&(c->localAddresses[i]), buf, 64);
-		printf("%s ", buf);
-	}
-	printf("port : %u\n", c->localPort);
-}
-
-void mdi_displayCellList(GList *list)
-{
-	event_log(INTERNAL_EVENT_0, "******************CellList");
-	GList *gl = NULL;
-	for(gl = list; gl; gl = gl->next)
-	  mdi_displayCell((Cell *)gl->data);
-}
-/**
- *@return 0 for success, -1 for fail*/
-int mdi_cellCpy(Cell *dst, Cell *src)
-{
-	if(src == NULL || dst == NULL)
-	{
-		error_log(ERROR_FATAL, "src or dst is null");
-		dst = NULL;
-		return -1;
-	}
-	else if(src->localAddresses == NULL || src->noOfLocalAddresses ==0)
-	{
-		error_log(ERROR_FATAL, "src's addrs is incalid");
-		dst = NULL;
-		return -1;
-	}
-	else
-	{
-		dst->localAddresses = malloc(sizeof(union sockunion) * src->noOfLocalAddresses);
-		if(!(dst->localAddresses))
-		{
-			error_log_sys(ERROR_MAJOR, (short)errno);
-			return -1;
-		}
-		dst->localPort = src->localPort;
-		dst->noOfLocalAddresses = src->noOfLocalAddresses;
-		dst->cellId = src->cellId;
-		memcpy(dst->localAddresses, src->localAddresses, 
-					sizeof(union sockunion) * src->noOfLocalAddresses);
-		return 0;
-	}
-	return -1;
-}
 
 void mdi_displayMasterList(void)
 {
@@ -669,68 +484,6 @@ gint CheckForAddressInInstance(gconstpointer a, gconstpointer b)
     return 0;
 
 }
-gint compareCell(Cell *a, Cell *b)
-{
-	if(a == NULL || b == NULL)
-	{
-		event_log(VVERBOSE, "attemp to campare null cell");
-		return -1;
-	}
-	if(a->localPort == b->localPort)
-	{
-		gboolean found;
-		found = FALSE;
-		int i, j;
-		/*there are common local addr ?*/
-		for(i = 0; i < a->noOfLocalAddresses; i++)
-			for(j = 0; j < b->noOfLocalAddresses; j++)
-				if(adl_equal_address(&(a->localAddresses[i]), &(b->localAddresses[j])))
-					found = TRUE;
-		if(found == FALSE)
-		{
-			event_log(VVERBOSE, "no common local addr in cell a, b");
-			return -1;
-		}
-		else
-		{
-			event_logiiii(VVERBOSE, "find two equal cell[%u] at %p and cell[%u] at %p",
-						a->cellId, a, b->cellId, b);
-			return 0;
-		}
-	}
-	else
-	{
-		event_log(VVERBOSE, "no common local addr in cell a, b");
-		return -1;
-	}
-}
-
-gint CheckForCellInInstance(gconstpointer a, gconstpointer b)
-{
-
-    SCTP_instance* ai = (SCTP_instance*)a;
-    SCTP_instance* bi = (SCTP_instance*)b;
-	if(ai == NULL || bi == NULL)
-	{
-		event_log(EXTERNAL_EVENT, "attemp to compare null pointer to SCTP_instance");
-		return -1;
-	}
-	Cell *aiA = (Cell *)ai->cellA;
-	Cell *aiB = (Cell *)ai->cellB;
-	Cell *biA = (Cell *)bi->cellA;
-	Cell *biB = (Cell *)bi->cellB;
-	if(aiA == NULL || aiB == NULL || biA == NULL ||  biB == NULL)
-	{
-		event_log(EXTERNAL_EVENT, "null pointer to Cell in SCTP_instance");
-		return -1;
-	}
-	if((compareCell(aiA, biA) == 0) && (compareCell(aiB, biB) == 0))
-	{
-		//printf("!!!!!test compareCell(aiA, biA) == 0) && (compareCell(aiB, biB) == 0\n");
-		return 0;
-	}
-	return -1;
-}
 
 /*本地端口相同，即为相同的SCTP Instance */
 gint CheckForAddressInInstanceWithoutLocaladdr(gconstpointer a, gconstpointer b)
@@ -745,14 +498,36 @@ gint CheckForAddressInInstanceWithoutLocaladdr(gconstpointer a, gconstpointer b)
     else if (ai->localPort > bi->localPort) return 1;
 	return 0;
 }
-gint CompareCellIds(gconstpointer a, gconstpointer b)
+gint CompareInstanceTransportAddress(gconstpointer a, gconstpointer b)
 {
-	//printf("cellId %u = cellId %u ?\n", ((Cell*)a)->cellId, ((Cell*)b)->cellId);
-    if ((((Cell*)a)->cellId) < ((Cell*)b)->cellId) return -1;
-    else if ((((Cell*)a)->cellId) > ((Cell*)b)->cellId) return 1;
-    else return 0;
+	SCTP_instance *ai = (SCTP_instance *)a;
+	SCTP_instance *bi = (SCTP_instance *)b;
+    if (ai->localPort != bi->localPort) 
+	  return -1;
+    else
+	{
+		int i, j;
+		for(i = 0; i < ai->noOfLocalAddresses; i++)
+		  for(j = 0; j < bi->noOfLocalAddresses; j++)
+		  {
+			  guchar buf[64];
+			  guchar buf1[64];
+			  adl_sockunion2str(&(ai->localAddressList[i]), buf, 64);
+			  adl_sockunion2str(&(bi->localAddressList[i]), buf1, 64);
+			  event_logii(VVERBOSE, "compare addrs:%s, %s", buf, buf1);
+			  if(adl_equal_address(&(ai->localAddressList[i]), 
+							  &(bi->localAddressList[j])) == TRUE)
+			  {
+				  event_log(VVERBOSE, "found two equal instances!");
+				  return 0;
+			  }
+		  }
+		event_log(VVERBOSE, "no equal instances found with no common addrs");
+		return -1;
+	}
+	event_log(VVERBOSE, "no equal instances found with unequal ports");
+	return -1;
 }
-
 gint CompareInstanceNames(gconstpointer a, gconstpointer b)
 {
 	//printf("sctpInstanceName %u = sctpInstanceName %u ?\n",
@@ -781,85 +556,6 @@ gint CompareInstanceLocalPorts(gconstpointer a, gconstpointer b)
   * @param instance_name Instance name.
   * @return SCTP_instance or NULL if not found.
   */
-SCTP_instance* retrieveInstanceByCells(Cell *ca, Cell *cb)
-{
-	if(ca == NULL || cb == NULL)
-	{
-		event_log(INTERNAL_EVENT_0, "aptempt to retrive instance with null cell");
-		return NULL;
-	}
-    SCTP_instance* instance;
-    SCTP_instance  temporary;
-    GList*         result = NULL;
-
-    event_log(INTERNAL_EVENT_0, "retrieving instance by cells from list");
-	mdi_displayCell(ca);
-	mdi_displayCell(cb);
-
-    temporary.cellA = ca;
-	temporary.cellB = cb;
-	//printf("test!!!!01 in retrieveInstanceByCells\n");
-    result = g_list_find_custom(InstanceList, &temporary, CheckForCellInInstance);
-    if (result != NULL) {
-		//printf("test!!!!02 in retrieveInstanceByCells\n");
-        instance = (SCTP_instance*)result->data;
-	    return instance;
-    }
-    else {
-       event_log(INTERNAL_EVENT_0, "swap cells an try again");
-	   temporary.cellA = cb;
-	   temporary.cellB = ca;
-	   result = g_list_find_custom(InstanceList, &temporary, &CheckForCellInInstance);
-	   if(result != NULL)
-	   {
-		   //printf("test!!!!03 in retrieveInstanceByCells\n");
-		   instance = (SCTP_instance*)result->data;
-		   return instance;
-	   }
-	   else
-	   {
-		   //printf("test!!!!04 in retrieveInstanceByCells\n");
-		   event_log(INTERNAL_EVENT_0, "instance not in list");
-		   return NULL;
-	   }
-    }
-    return NULL;
-}
-
-/**
-  * Retrieve Cell.
-  *
-  * @param instance_name Instance name.
-  * @return Cell or NULL if not found.
-  */
-Cell *retrieveCell(unsigned short cellId)
-{
-    Cell *cell;
-    Cell temporary;
-    GList *result = NULL;
-
-    event_logi(INTERNAL_EVENT_0, "retrieving cell %u from list", cellId);
-
-    temporary.cellId = cellId;
-    result = g_list_find_custom(cellList, &temporary, &CompareCellIds);
-    if (result != NULL) {
-       cell = (Cell*)result->data;
-    }
-    else {
-       event_logi(INTERNAL_EVENT_0, "cell %u not in list", cellId);
-       cell = NULL;
-    }
-
-    return(cell);
-}
-
-
-/**
-  * Retrieve instance.
-  *
-  * @param instance_name Instance name.
-  * @return SCTP_instance or NULL if not found.
-  */
 SCTP_instance* retrieveInstance(unsigned short instance_name)
 {
     SCTP_instance* instance;
@@ -880,6 +576,48 @@ SCTP_instance* retrieveInstance(unsigned short instance_name)
 
     return(instance);
 }
+/**
+  * Retrieve instance.
+  *
+  * @param instance_name Instance name.
+  * @return SCTP_instance or NULL if not found.
+  */
+SCTP_instance* retrieveInstanceByTansportAddress(unsigned short localPort,
+			unsigned short noOfLocalAddresses, 
+			union sockunion *localAddressList)
+{
+    SCTP_instance* instance;
+    SCTP_instance  temporary;
+    GList*         result = NULL;
+
+    event_logii(INTERNAL_EVENT_0, "retrieving instance with port %u and %u addrs from list", 
+				localPort, noOfLocalAddresses);
+	printf("addrs:");
+	guchar buf[64];
+	int i;
+	for(i = 0; i < noOfLocalAddresses; i++)
+	{
+		adl_sockunion2str(&localAddressList[i], buf, 64);
+		printf("%s ", buf);
+	}
+	printf("\n");
+    temporary.localPort = localPort;
+	temporary.noOfLocalAddresses = noOfLocalAddresses;
+	temporary.localAddressList = localAddressList;
+    result = g_list_find_custom(InstanceList, &temporary, &CompareInstanceTransportAddress);
+    if (result != NULL) {
+       instance = (SCTP_instance*)result->data;
+    }
+    else {
+       event_logii(INTERNAL_EVENT_0, "instance with port %u and addrs %u not in list", 
+				   localPort, noOfLocalAddresses);
+       instance = NULL;
+    }
+
+    return(instance);
+}
+
+
 
 /**
  *  compareMSAssociationIDs compares the association MS ID's of two associations and returns 0
@@ -2260,9 +1998,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
     short shutdownCompleteCID;
     short abortCID;
 
-	Cell *ca = NULL;
-	Cell *cb = NULL;
-
     /* FIXME:  check this out, if it works at all :-D */
     lastFromAddress = source_addr;
     lastDestAddress = dest_addr;
@@ -2289,39 +2024,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
        For instance initAck or cookieAck. */
     lastFromPort = ntohs(message->common_header.src_port);
     lastDestPort = ntohs(message->common_header.dest_port);
-	mdi_displayCellList(cellList);
-	ca = retrieveCellByTransportAddress(lastFromPort, 1, lastFromAddress);
-	int cellIdA;
-	if(ca == NULL)
-	{
-		cellIdA = mdi_createCellByTransportAddress(lastFromPort, 1, lastFromAddress);
-		if(cellIdA > 0)
-		{
-			event_log(INTERNAL_EVENT_0, "create a cell success");
-			mdi_displayCellList(cellList);
-		}
-		else
-		{
-			error_log(ERROR_FATAL, "create a cell failed");
-			return;
-		}
-	}
-	int cellIdB;
-	cb = retrieveCellByTransportAddress(lastDestPort, 1, lastDestAddress);
-	if(cb == NULL)
-	{
-		cellIdB = mdi_createCellByTransportAddress(lastDestPort, 1, lastDestAddress);
-		if(cellIdB > 0)
-		{
-			event_log(INTERNAL_EVENT_0, "create b cell success");
-			mdi_displayCellList(cellList);
-		}
-		else
-		{
-			error_log(ERROR_FATAL, "create b cell failed");
-			return;
-		}
-	}
     if (lastFromPort == 0 || lastDestPort == 0) {
         error_log(ERROR_MINOR, "received DG with invalid (i.e. 0) ports");
         lastFromAddress = NULL;
@@ -2375,8 +2077,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 
 
     /* Retrieve association from list  */
-	ca = retrieveCell(cellIdA);
-	cb = retrieveCell(cellIdB);
     currentAssociation = retrieveAssociationByTransportAddress(lastFromAddress, lastFromPort, lastDestPort);
     if (currentAssociation != NULL) {
         /* meaning we MUST have an instance with no fixed port */
@@ -2386,10 +2086,10 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         /* OK - if this packet is for a server, we will find an SCTP instance, that shall
            handle it (i.e. we have the SCTP instance's localPort set and it matches the
            packet's destination port */
-		SCTP_instance *result_instance = retrieveInstanceByCells(ca, cb);
+		SCTP_instance *result_instance = retrieveInstanceByTansportAddress(lastDestPort, 1, lastDestAddress);
 
         if (result_instance == NULL) {/*FIXME:actully not or may anothor path*/
-            event_log(VERBOSE, "Couldn't find SCTP Instance for cells and Address in List !");
+            event_log(VERBOSE, "Couldn't find SCTP Instance by tansportAddress in List !");
             sctpInstance = NULL;
         } else {
             sctpInstance = result_instance;
@@ -2454,30 +2154,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         }
     }
 	event_logi(VERBOSE, "we found %d addrs in INIT", noOfalternativeAddresses);
-	//if(noOfalternativeAddresses > 0)
-	//{
-	//	if(ca.localAddresses != NULL)
-	//	  free(ca.localAddresses);
-	//	ca.localAddresses = (union sockunion*)malloc(sizeof(union sockunion) * (noOfalternativeAddresses + 1));
-	//	memcpy(&ca.localAddresses[0], &lastFromAddress, sizeof(union sockunion));
-	//	memcpy(&ca.localAddresses[1], &alternateAddressList[0], sizeof(union sockunion) * noOfalternativeAddresses);
-	//	ca.noOfLocalAddresses = noOfalternativeAddresses + 1;
-	//	SCTP_instance *result_instance = retrieveInstanceByCells(ca, cb);
-	//	if (result_instance == NULL)
-	//	{/*FIXME:actully no SCTP_instance*/
-    //        event_log(VERBOSE, "Couldn't find SCTP Instance for cells and Address in List !");
-	//		mdi_displayCell(ca);
-	//		mdi_displayCell(cb);
-    //        sctpInstance = NULL;
-    //    } else {
-    //        sctpInstance = result_instance;
-    //        supportedAddressTypes = result_instance->supportedAddressTypes;
-    //        event_logii(VERBOSE, "Found an SCTP Instance for Port %u and Address in the list, types: %d !",
-    //                            lastDestPort, supportedAddressTypes);
-    //    }
-
-	//}
-    /** check whether chunk is illegal or not (see section 3.1 of RFC 4960)
+	/** check whether chunk is illegal or not (see section 3.1 of RFC 4960)
 	 * An INIT chunk MUST be the only chunk in the SCTP packet carrying it*/
     if ( ((rbu_datagramContains(CHUNK_INIT, chunkArray) == TRUE) && (chunkArray != (1 << CHUNK_INIT))) ||
          ((rbu_datagramContains(CHUNK_INIT_ACK, chunkArray) == TRUE) && (chunkArray != (1 << CHUNK_INIT_ACK))) ||
@@ -2569,8 +2246,8 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 
         if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT)) != NULL) {
             if (sctpInstance != NULL) {
-                if (lastDestPort != ((Cell *)(sctpInstance->cellA))->localPort && 
-							lastDestPort != ((Cell *)(sctpInstance->cellB))->localPort) {
+                if (lastDestPort != sctpInstance->localPort || sctpInstance-> localPort == 0)
+				{
                     /* destination port is not the listening port of this this SCTP-instance. */
                     event_log(INTERNAL_EVENT_0,
                               "mdi_receiveMsgAtRing: got INIT Message, but dest. port does not fit -> ABORT");
@@ -2592,20 +2269,20 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                 }
 
             } else {    /* we do not have an instance up listening on that port-> ABORT him */
-                event_log(INTERNAL_EVENT_0,
-                         "mdi_receiveMsgAtRing: got INIT Message, but no instance found -> IGNORE");
-				
                 /*no instance, so we create one*/
-				//printf("!!!!!!01	ca = %p cb = %p\n", ca, cb);
-				int instanceID = mdi_createInstanceByCells(ca, cb);
-				if(instanceID > 0)
+				event_log(INTERNAL_EVENT_0, "mdi_receiveMsgAtRing: got INIT Message but no instances-> CREATE");
+				int instanceID = mdi_createInstanceByTansportAddress(lastFromPort, 1, lastFromAddress);
+				int instanceID1 = mdi_createInstanceByTansportAddress(lastDestPort, 1, lastDestAddress);
+				if(instanceID > 0 && instanceID1 > 0)
 					{
-						event_logi(VVERBOSE,"new instance with name %u created", instanceID);
+						event_logii(VVERBOSE,"two instances with created: %u, %u", 
+									instanceID, instanceID1);
 						mdi_displayInstanceList(InstanceList);
 					}
 				else
 				{
-					error_log(ERROR_FATAL, "cannot create an instance from cells");
+					event_log(INTERNAL_EVENT_0,
+                         "mdi_receiveMsgAtRing: got INIT Message, and cannot craete instances-> IGNORE");
 					sendAbort = TRUE;
                 	initChunk = ((SCTP_init_fixed *) & ((SCTP_init *) message->sctp_pdu)->init_fixed);
                 	lastInitiateTag = ntohl(initChunk->init_tag);
@@ -5427,14 +5104,9 @@ unsigned int mdi_associatex( unsigned int   maxSimultaneousInits,
 	unsigned short localPort = slave->localPort;
 	unsigned int initTag = slave->tagLocal;
 
-	//mdi_displaySockunionList(localAddresses, noOfLocalAddresses);
-	mdi_displaySockunionList(destinationAddresses, noOfDestinationAddresses);
-
     unsigned int assocID, count;
     gboolean withPRSCTP;
 	AddressScopingFlags filterFlags = flag_Default;
-	Cell *cellA;
-	Cell *cellB;
 
     SCTP_instance *old_Instance = sctpInstance;
     Association *old_assoc = currentAssociation;
@@ -5475,44 +5147,10 @@ unsigned int mdi_associatex( unsigned int   maxSimultaneousInits,
     }
 
     event_log(EXTERNAL_EVENT, "mdi_associatex called");
-	cellA = retrieveCellByTransportAddress(slave->localPort, 
+    sctpInstance = retrieveInstanceByTansportAddress(
+				slave->localPort,
 				slave->noOfLocalAddresses,
-				slave->localAddresses);
-	if(cellA == NULL)
-	{
-		error_log(ERROR_MAJOR, "mdi_associatex: cannot retrieve cellA");
-		return 0;
-	}
-	else
-	{
-		event_logii(EXTERNAL_EVENT, "mdi_associatex: got a cellA[%u] at %p",
-					cellA->cellId, cellA);
-		if(slave ->noOfLocalAddresses > cellA->noOfLocalAddresses)
-		{
-			mdi_updateCellAddresses(cellA, slave->noOfLocalAddresses, slave->localAddresses);
-			mdi_displayCellList(cellList);
-		}
-	}
-	cellB = retrieveCellByTransportAddress(slave->remotePort,
-				slave->noOfNetworks,
-				slave->destinationAddresses);
-	if(cellA == NULL)
-	{
-		error_log(ERROR_MAJOR, "mdi_associatex: cannot retrieve cellB");
-		return 0;
-	}
-	else
-	{
-		event_logii(EXTERNAL_EVENT, "mdi_associatex: got a cellB[%u] at %p",
-					cellB->cellId, cellB);
-		if(slave ->noOfNetworks > cellB->noOfLocalAddresses)
-		{
-			mdi_updateCellAddresses(cellB, slave->noOfNetworks, slave->destinationAddresses);
-			mdi_displayCellList(cellList);
-		}
-	}
-    event_log(VERBOSE, "Looking for SCTP Instance with cells");
-    sctpInstance = retrieveInstanceByCells(cellA, cellB); 
+				slave->localAddresses); 
     if (sctpInstance == NULL) {
         error_log(ERROR_MAJOR, "mdi_associate: SCTP instance not in the list !!!");
         sctpInstance = old_Instance;
@@ -5582,9 +5220,12 @@ unsigned int mdi_associatex( unsigned int   maxSimultaneousInits,
  *  @param ULPcallbackFunctions   call back functions for primitives passed from sctp to ULP
  *  @return     instance name of this SCTP-instance or 0 in case of errors, or error code
  */
-static int mdi_createInstanceByCells(Cell *cellA, Cell *cellB)
+//currentAssociation = retrieveAssociationByTransportAddress(lastFromAddress, lastFromPort, lastDestPort);
+static int mdi_createInstanceByTansportAddress(
+			unsigned short localPort,
+			unsigned short noOfLocalAddresses,
+			union sockunion *localAddressList)
 {
-//	printf("!!!!!!02	ca = %p cb = %p\n", cellA, cellB);
     int adl_rscb_code;
     gboolean with_ipv4 = FALSE;
     unsigned short result;
@@ -5593,34 +5234,23 @@ static int mdi_createInstanceByCells(Cell *cellA, Cell *cellB)
     SCTP_instance *old_Instance = sctpInstance;
     Association *old_assoc = currentAssociation;
 
-    ENTER_LIBRARY("mdi_createInstanceByCells");
+    ENTER_LIBRARY("mdi_createInstanceByTansportAddress");
     ZERO_CHECK_LIBRARY;
 
-    event_log(EXTERNAL_EVENT, "mdi_createInstanceByCells called");
+    event_log(EXTERNAL_EVENT, "mdi_createInstanceByTansportAddress called");
 
-	if(cellA == NULL || cellB == NULL)
+	if(noOfLocalAddresses == 0 || localAddressList == NULL)
 	{
-		error_log(ERROR_MAJOR, "attempt to register an instance witn null cells in mdi_createInstanceByCells()");
+		error_log(ERROR_MAJOR,"mdi_createInstanceByTansportAddress:invalid address parameter");
 		return SCTP_PARAMETER_PROBLEM;
 	}
-	if(cellA->noOfLocalAddresses == 0 || cellA->localAddresses == NULL ||
-				cellB->noOfLocalAddresses == 0 || cellB->localAddresses == NULL)
-	{
-		error_log(ERROR_MAJOR,"invalid address parameter in cells");
-		mdi_displayCell(cellA);
-		mdi_displayCell(cellB);
-		return SCTP_PARAMETER_PROBLEM;
-	}
-	mdi_displayCell(cellA);
-	mdi_displayCell(cellB);
 	with_ipv4 = TRUE;
-    event_logi(VERBOSE, "mdi_createInstanceByCells : with_ipv4 : %s ",(with_ipv4==TRUE)?"TRUE":"FALSE" );
-    if ((with_ipv4 != TRUE)/*既不是ipv4也不是ipv6，即出错*/
-                              ) {
-            error_log(ERROR_MAJOR, "No valid address in mdi_createInstanceByCells()");
+    event_logi(VERBOSE, "mdi_createInstanceByTansportAddress : with_ipv4 : %s ",(with_ipv4==TRUE)?"TRUE":"FALSE" );
+    if ((with_ipv4 != TRUE)) {
+            error_log(ERROR_MAJOR, "No valid address in mdi_createInstanceByTansportAddress()");
             sctpInstance = old_Instance;
             currentAssociation = old_assoc;
-            LEAVE_LIBRARY("mdi_createInstanceByCells");
+            LEAVE_LIBRARY("mdi_createInstanceByTansportAddress");
             return SCTP_PARAMETER_PROBLEM;
     }
     sctpInstance = (SCTP_instance *) malloc(sizeof(SCTP_instance));
@@ -5629,17 +5259,35 @@ static int mdi_createInstanceByCells(Cell *cellA, Cell *cellB)
         error_log_sys(ERROR_MAJOR, (short)errno);
         sctpInstance = old_Instance;
         currentAssociation = old_assoc;
-        LEAVE_LIBRARY("mdi_createInstanceByCells");
+        LEAVE_LIBRARY("mdi_createInstanceByTansportAddress");
         return SCTP_OUT_OF_RESOURCES;
     }
-    /* 实例的Cell参数 */
-	sctpInstance->cellA = cellA;
-	sctpInstance->cellB = cellB;
+	sctpInstance->localPort = localPort;
+	sctpInstance->has_INADDR_ANY_set = FALSE;
+	sctpInstance->has_IN6ADDR_ANY_set = FALSE;
+	sctpInstance->uses_IPv4 = TRUE;
+	sctpInstance->uses_IPv6 = FALSE;
+	sctpInstance->supportsPRSCTP = librarySupportsPRSCTP;
+	sctpInstance->supportsADDIP = supportADDIP;
 	/*支持的地址类型*/
     sctpInstance->supportedAddressTypes = 0;
     if (with_ipv4) sctpInstance->supportedAddressTypes |= SUPPORT_ADDRESS_TYPE_IPV4;
-
-    list_result = g_list_find_custom(InstanceList, sctpInstance, &CheckForCellInInstance);
+	
+	if(sctpInstance->has_IN6ADDR_ANY_set  == FALSE &&
+				sctpInstance->has_INADDR_ANY_set == FALSE)
+	{
+		sctpInstance->localAddressList = 
+			(union sockunion *)malloc(sizeof(union sockunion) * noOfLocalAddresses);
+		if(sctpInstance->localAddressList == NULL)
+		{
+			error_log_sys(ERROR_MAJOR, (short)errno);
+			return SCTP_OUT_OF_RESOURCES;
+		}
+		memcpy(sctpInstance->localAddressList, 
+					localAddressList, sizeof(union sockunion) * noOfLocalAddresses);
+		sctpInstance->noOfLocalAddresses = noOfLocalAddresses;
+	}
+    list_result = g_list_find_custom(InstanceList, sctpInstance, &CheckForAddressInInstance);
 
     if (list_result) {
         free(sctpInstance->localAddressList);
@@ -5647,7 +5295,7 @@ static int mdi_createInstanceByCells(Cell *cellA, Cell *cellB)
         sctpInstance = old_Instance;
         currentAssociation = old_assoc;
         error_log(ERROR_MAJOR, "Instance already existed ! Returning error !");
-        LEAVE_LIBRARY("mdi_createInstanceByCells");
+        LEAVE_LIBRARY("mdi_createInstanceByTansportAddress");
         return 0;
     }
 
@@ -5696,7 +5344,7 @@ static int mdi_createInstanceByCells(Cell *cellA, Cell *cellB)
     if(sctpInstance->sctpInstanceName == 0) {
         sctpInstance = old_Instance;
         currentAssociation = old_assoc;
-        LEAVE_LIBRARY("mdi_createInstanceByCells");
+        LEAVE_LIBRARY("mdi_createInstanceByTansportAddress");
         return SCTP_OUT_OF_RESOURCES;
     }
 
@@ -5724,9 +5372,9 @@ static int mdi_createInstanceByCells(Cell *cellA, Cell *cellB)
 
     sctpInstance = old_Instance;
     currentAssociation = old_assoc;
-    LEAVE_LIBRARY("mdi_createInstanceByCells");
+    LEAVE_LIBRARY("mdi_createInstanceByTansportAddress");
     return (int)result;
-}                               /* end: mdi_createInstanceByCells */
+}                               /* end: mdi_createInstanceByTansportAddress */
 
 /* The following functions return pointer to data of modules of the SCTP. As only these
    modules know the exact type of these data structures, so the returned pointer are
@@ -5968,26 +5616,6 @@ unsigned int mdi_getUnusedAssocId(void)
     } while (tmp != NULL);
 
     return newId;
-}
-
-unsigned short mdi_getUnusedCellId(void)
-{
-	Cell *tmp;
-	unsigned short newId;
-    unsigned int   i;
-
-    for(i = 0; i < 65536; i++) {
-        if(nextCellId == 0) {
-           nextCellId++;
-        }
-        newId = nextCellId;
-        tmp   = retrieveCell(newId);
-		nextCellId++;
-        if(tmp == NULL) {
-           return(newId);
-        }
-    }
-	return 0;
 }
 
 unsigned short mdi_getUnusedInstanceName(void)
