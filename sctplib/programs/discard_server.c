@@ -55,7 +55,7 @@
 
 #include "sctp_wrapper.h"
 
-#define DISCARD_PORT                          2905
+#define DISCARD_PORT                          8000
 #define MAXIMUM_NUMBER_OF_LOCAL_ADDRESSES    10
 #define MAXIMUM_PAYLOAD_LENGTH             8192
 #define MAXIMUM_NUMBER_OF_IN_STREAMS         17

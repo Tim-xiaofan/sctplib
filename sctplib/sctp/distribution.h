@@ -418,8 +418,6 @@ unsigned short mdi_newMasterAssociation(unsigned short local_port,
                    union sockunion *destinationAddressList,
 				   void *recv_ring);
 
-void mdi_displayMasterList(void);
-
 /*------------------- Functions to create and delete associations --------------------------------*/
 
 /* This function allocates memory for a new association.

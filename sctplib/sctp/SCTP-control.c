@@ -1023,7 +1023,6 @@ gboolean sctlr_initAck(SCTP_init * initAck)
         ndAddresses = ch_IPaddresses(initAckCID, supportedTypes, dAddresses, &peerSupportedTypes, &destAddress);
 		/* update master's local addresses*/
 		event_log(EXTERNAL_EVENT, "after update");
-		mdi_displayMasterList();
 
         mdi_writeDestinationAddresses(dAddresses, ndAddresses);
 
