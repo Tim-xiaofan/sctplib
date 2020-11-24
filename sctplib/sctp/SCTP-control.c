@@ -737,27 +737,27 @@ int sctlr_init(SCTP_init * init)
 		error_log(ERROR_MAJOR, "sctlr_init: exist ms association with same remote addr, local port, remote port");
 		return return_state;
 	}
-    if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
-        /* DO_5_1_B_INIT : Normal case, no association exists yet */
+	if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
+		/* DO_5_1_B_INIT : Normal case, no association exists yet */
 		/* create Master TCB and it's Slave TCB */
-		
+
 		/*gather ip addr in INIT, slave as active peer, must store all ip addr given network cell A
 		 *slave must look like cell B, master must look like cell A */
-        supportedTypes = mdi_getSupportedAddressTypes();
+		supportedTypes = mdi_getSupportedAddressTypes();
 		nrAddresses = ch_IPaddresses(initCID, supportedTypes, rAddresses, &peerSupportedTypes, &last_source);
 		event_logi(EXTERNAL_EVENT, "there are %d addrs in INIT", nrAddresses);
 		supportedTypes = mdi_getSupportedAddressTypes();
-        if ((supportedTypes & peerSupportedTypes) == 0)
-            error_log(ERROR_FATAL, "BAKEOFF: Program error, no common address types in sctlr_init()");
+		if ((supportedTypes & peerSupportedTypes) == 0)
+		  error_log(ERROR_FATAL, "BAKEOFF: Program error, no common address types in sctlr_init()");
 		/*sctp common head's dest_port, src_port
 		 *mater looks like cell B and slave looks like cell A
 		 *now: got INIT from A, as master dest*/
 		noSuccess = mdi_newMasterAssociation(mdi_readLastFromPort(), mdi_readLastDestPort(), ch_initiateTag(initCID), nrAddresses, rAddresses, mdi_readLastRecvRing());
 		if (noSuccess)
 		{
-				/* new association could not be entered in the list of associations */
-				error_log(ERROR_MAJOR, "sctlr_init: Creation of MS association failed");
-				return return_state;
+			/* new association could not be entered in the list of associations */
+			error_log(ERROR_MAJOR, "sctlr_init: Creation of MS association failed");
+			return return_state;
 		}
 		else
 		{
@@ -788,66 +788,9 @@ int sctlr_init(SCTP_init * init)
 			event_log(INTERNAL_EVENT_0, "*******************creat and init a Association TCB");
 			return_state = STATE_STOP_PARSING; /* to stop parsing without actually removing it */
 		}
-        /* DO_5_1_B_INIT : Normal case, no association exists yet */
-        /* save a-sides init-tag from init-chunk to be used as a verification tag of the sctp-
-           message carrying the initAck (required since no association is created). 
-		   关联不存在，需要保留A端INIT的init_tag, 作为之后由INIT ACK携带的验证*/
-        //mdi_writeLastInitiateTag(ch_initiateTag(initCID));
-
-        ///* Limit the number of sendstreams a-side requests to the max. number of input streams
-        //   this z-side is willing to accept.
-		//	限制请求方的发送流数量上限
-        // */
-        //inbound_streams = min(ch_noOutStreams(initCID), mdi_readLocalInStreams());
-        //outbound_streams = min(ch_noInStreams(initCID), mdi_readLocalOutStreams());
-        ///* fire back an InitAck with a Cookie 火速回应INIT ACK*/
-        //initAckCID = ch_makeInitAck(mdi_generateTag(),/*启动标签*/
-        //                            mdi_getDefaultMyRwnd(),/*通告的接收方窗口信用值*/
-        //                            outbound_streams,/*希望在该偶联中创建的输出流的数量*/
-        //                            inbound_streams,/*在该偶联中所创建的流的最大数量*/
-		//							mdi_generateStartTSN());/*定义发送方将使用的初始的TSN*/
-
-        ///* retreive a-side source addresses from message */
-        //supportedTypes = mdi_getSupportedAddressTypes();
-
-        //nrAddresses = ch_IPaddresses(initCID, supportedTypes, rAddresses, &peerSupportedTypes, &last_source);
-
-
-        //if ((supportedTypes & peerSupportedTypes) == 0)
-        //    error_log(ERROR_FATAL, "BAKEOFF: Program error, no common address types in sctlr_init()");
-
-        ///* enter variable length params initAck 在INIT ACK中加入本端地址*/
-        //mdi_readLocalAddresses(lAddresses, &nlAddresses, &last_source, 1, peerSupportedTypes,TRUE);
-        ///* enter local addresses into initAck */
-        //if (nlAddresses > 1)
-        //    ch_enterIPaddresses(initAckCID, lAddresses, nlAddresses);
-
-        ///* append cookie to InitAck Chunk */
-        //ch_enterCookieVLP(initCID, initAckCID,
-        //                  ch_initFixed(initCID), ch_initFixed(initAckCID),
-        //                  ch_cookieLifeTime(initCID), 0, /* tie tags are both zero */
-        //                  0, lAddresses, nlAddresses, rAddresses, nrAddresses);
-
-
-        //process_further = ch_enterUnrecognizedParameters(initCID, initAckCID, supportedTypes);
-
-        //if (process_further == -1) {
-        // /*   ch_deleteChunk(initAckCID);
-        //    ch_forgetChunk(initCID); */
-        //    return_state = STATE_STOP_PARSING; /* to stop parsing without actually removing it */
-        //    /* return return_state; */
-        //} else {
-        //    if (process_further == 1) {
-        //        return_state = STATE_STOP_PARSING; /* to stop parsing without actually removing it */
-        //    }
-        //    /* send initAck */
-        //    bu_put_Ctrl_Chunk(ch_chunkString(initAckCID),NULL);
-        //}
-        //bu_sendAllChunks(NULL);
-        //bu_unlock_sender(NULL);
-        //ch_deleteChunk(initAckCID);
-        //event_log(INTERNAL_EVENT_1, "event: initAck sent");
-    } else {
+	}
+	else 
+	{
         /* save a-sides init-tag from init-chunk to be used as a verification tag of the sctp-
            message carrying the initAck (required since peer may have changed the verification
            tag).

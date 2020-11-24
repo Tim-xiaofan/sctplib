@@ -156,7 +156,6 @@ void getArgs(int argc, char **argv)  /* Irene */
 						exit(0);
 					}
 					opt = argv[++i];
-					printf("opt = %s\n", opt);
 					if ((noOfLocalAddresses < MAXIMUM_NUMBER_OF_LOCAL_ADDRESSES) &&
 							(strlen(opt) < SCTP_MAX_IP_LEN  )) {
 						strcpy((char *)localAddressList[noOfLocalAddresses], opt);
@@ -397,7 +396,6 @@ void shutdownReceivedNotif(unsigned int assocID, void* ulpDataPtr)
 int main(int argc, char **argv)
 {
 
-	printf("test\n");
 	SCTP_ulpCallbacks discardUlp;/*上层用户定义的回调函数F3集合*/
 	SCTP_LibraryParameters params;/*控制参数*/
 	SCTP_InstanceParameters instanceParameters;
@@ -440,7 +438,6 @@ int main(int argc, char **argv)
 	/* handle all command line options */
 	getArgs(argc, argv);
 	checkArgs();
-	printf("test1\n");
 
 	SCTP_getLibraryParameters(&params);
 	params.sendOotbAborts = sendOOTBAborts;
@@ -451,7 +448,6 @@ int main(int argc, char **argv)
 
 	/* set up the "server" 调用F2，把F3集合作为参数传递给F2*/
 	//localAddressList[noOfLocalAddresses][]
-	printf("noOfLocalAddresses = %d\n", noOfLocalAddresses);
 	sctpInstance = SCTP_registerInstance(DISCARD_PORT,
 			MAXIMUM_NUMBER_OF_IN_STREAMS, MAXIMUM_NUMBER_OF_OUT_STREAMS,
 			noOfLocalAddresses, localAddressList,
