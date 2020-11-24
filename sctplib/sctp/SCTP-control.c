@@ -122,8 +122,6 @@ static void sci_timer_expired(TimerID timerID, void *associationIDvoid, void *un
 pointer to the current controller structure. Only set when association exists.
 */
 static SCTP_controlData *localData;
-static MS_Association *msLocalData;
-
 
 /* ------------------ Function Implementations ---------------------------------------------------*/
 
@@ -658,7 +656,6 @@ int sctlr_init(SCTP_init * init)
      */
 
     unsigned int state;
-	int noSuccess;
     guint16 nlAddresses;
     union sockunion lAddresses[MAX_NUM_ADDRESSES];
     guint16 nrAddresses;
@@ -729,14 +726,6 @@ int sctlr_init(SCTP_init * init)
         return_state = STATE_STOP_PARSING_REMOVED;
         return return_state;
     }
-
-	MS_Association *masterAssociation = NULL;
-	masterAssociation = mdi_retrieveMasterAssociationByTransportAddress(&last_source, mdi_readLastDestPort(), mdi_readLastDestPort());
-	if(masterAssociation)/* not null*/
-	{
-		error_log(ERROR_MAJOR, "sctlr_init: exist ms association with same remote addr, local port, remote port");
-		return return_state;
-	}
 	if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
 		/* DO_5_1_B_INIT : Normal case, no association exists yet */
 		/* create Master TCB and it's Slave TCB */
@@ -746,48 +735,16 @@ int sctlr_init(SCTP_init * init)
 		supportedTypes = mdi_getSupportedAddressTypes();
 		nrAddresses = ch_IPaddresses(initCID, supportedTypes, rAddresses, &peerSupportedTypes, &last_source);
 		event_logi(EXTERNAL_EVENT, "there are %d addrs in INIT", nrAddresses);
-		supportedTypes = mdi_getSupportedAddressTypes();
 		if ((supportedTypes & peerSupportedTypes) == 0)
 		  error_log(ERROR_FATAL, "BAKEOFF: Program error, no common address types in sctlr_init()");
-		/*sctp common head's dest_port, src_port
-		 *mater looks like cell B and slave looks like cell A
-		 *now: got INIT from A, as master dest*/
-		noSuccess = mdi_newMasterAssociation(mdi_readLastFromPort(), mdi_readLastDestPort(), ch_initiateTag(initCID), nrAddresses, rAddresses, mdi_readLastRecvRing());
-		if (noSuccess)
+			/*start an association*/
+		if(mdi_associatex(initCID, NULL) == 0)
 		{
-			/* new association could not be entered in the list of associations */
-			error_log(ERROR_MAJOR, "sctlr_init: Creation of MS association failed");
+			error_log(ERROR_MAJOR, "associate faile");
 			return return_state;
 		}
-		else
-		{
-			event_log(INTERNAL_EVENT_0, "check after mdi_newMasterAssociation called");
-			masterAssociation = mdi_retrieveMasterAssociationByTransportAddress(&last_source, mdi_readLastFromPort(), mdi_readLastDestPort());
-			if(masterAssociation == NULL)
-			{
-				error_log(ERROR_MAJOR, "retrieveMSAssociationByTransportAddress: cannot get masterAssociation");
-				return return_state;
-			}
-			if(masterAssociation->ms_assoc == NULL)
-			{
-				error_log(ERROR_MAJOR, "sctlr_init: A master association with no slave");
-				return return_state;
-			}
-			event_logii(INTERNAL_EVENT_0, "get a master assoc[%d], with slave assoc[%d]", 
-						masterAssociation->ms_assocId, ((MS_Association *)masterAssociation->ms_assoc)->ms_assocId);
-
-			event_logii(INTERNAL_EVENT_0, "get a slave assoc[%d], with master assoc[%d]", 
-						((MS_Association *)masterAssociation->ms_assoc)->ms_assocId, masterAssociation->ms_assocId);
-			MS_Association *slave = (MS_Association *)masterAssociation->ms_assoc;
-			/*start an association*/
-			if(mdi_associatex(1, slave, initCID, NULL) == 0)
-			{
-				error_log(ERROR_MAJOR, "associate faile");
-				return return_state;
-			}
-			event_log(INTERNAL_EVENT_0, "*******************creat and init a Association TCB");
-			return_state = STATE_STOP_PARSING; /* to stop parsing without actually removing it */
-		}
+		event_log(INTERNAL_EVENT_0, "*******************creat and init a Association TCB");
+		return_state = STATE_STOP_PARSING; /* to stop parsing without actually removing it */
 	}
 	else 
 	{
@@ -1018,22 +975,10 @@ gboolean sctlr_initAck(SCTP_init * initAck)
     }
 
     state = localData->association_state;
-	if((msLocalData = (MS_Association *) mdi_readMSassoc()) == NULL)
-	{
-		ch_forgetChunk(initAckCID);
-		error_log(ERROR_MAJOR, "sctlr_initAck: read ms_add falied");
-		return return_state;
-	}
-
-    switch (state) {
+	switch (state) {
     case COOKIE_WAIT:
 
         event_log(EXTERNAL_EVENT, "event: initAck in state COOKIE_WAIT");
-		if(msLocalData->ms_state !=SLAVE_NEED_COOKIE_ECHO)
-		{
-			error_log(ERROR_MAJOR, "Association B at COOKIE_WAIT, but slave not at SLAVE_NEED_COOKIE_ECHO");
-			return return_state;
-		}
         /* Set length of chunk to HBO(host byte order) !! */
         initCID = ch_makeChunk((SCTP_simple_chunk *) localData->initChunk);
 
@@ -1077,7 +1022,6 @@ gboolean sctlr_initAck(SCTP_init * initAck)
         /* retrieve addresses from initAck */
         ndAddresses = ch_IPaddresses(initAckCID, supportedTypes, dAddresses, &peerSupportedTypes, &destAddress);
 		/* update master's local addresses*/
-		mdi_updateMasterLocalAddr((MS_Association *) msLocalData->ms_assoc, ndAddresses, dAddresses);
 		event_log(EXTERNAL_EVENT, "after update");
 		mdi_displayMasterList();
 
@@ -2350,21 +2294,11 @@ void sci_associate(unsigned short noOfOutStreams,
         error_log(ERROR_MAJOR, "read SCTP-control failed");
         return;
     }
-	if((msLocalData = (MS_Association *) mdi_readMSassoc()) == NULL)
-	{
-        error_log(ERROR_MAJOR, "read ms_assoc failed");
-        return;
-	}
     state = localData->association_state;
 
     switch (state) {
     case CLOSED:
         event_log(EXTERNAL_EVENT, "event: assocatiate in state CLOSED");
-		if(msLocalData->ms_state != SLAVE_NEED_INIT)
-		{
-			error_log(ERROR_MAJOR, "attempt to send INIT when slave'state is not SLAVE_NEED_INIT");
-			return;
-		}
         /* store the number of streams */
         localData->NumberOfOutStreams = noOfOutStreams;
         localData->NumberOfInStreams = noOfInStreams;
@@ -2398,7 +2332,6 @@ void sci_associate(unsigned short noOfOutStreams,
                                                (void *) &localData->associationID, NULL);
 
         state = COOKIE_WAIT;
-		msLocalData->ms_state = SLAVE_NEED_COOKIE_ECHO;
         break;
     default:
         error_logi(EXTERNAL_EVENT_X, "Erroneous Event : associate called in state %u", state);

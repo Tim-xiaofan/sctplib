@@ -71,48 +71,6 @@
 #define RTO_MAX                 60000
 
 #define SCTP_MAX_IP_LEN 46
-/**
- * This struct contains all data of an association. As far as other modules must know elements
- * of this struct, read functions are provided. No other module has write access to this structure.
- * 其他模块都没有访问权
- */
-typedef struct MS_ASSOCIATION
-{
-    /** The current ID of this ms association,
-        it is used as a key to find a association in the list,
-        and never changes in the  live of the association  */
-	unsigned int ms_assocId;
-    /** The local tag of this association. */
-    unsigned int tagLocal;
-    /** The tag of remote side of this association */
-    unsigned int tagRemote;
-    /** the local port number of this association. */
-    unsigned short localPort;
-    /** the remote port number of this association. */
-    unsigned short remotePort;
-    /** number of destination networks (paths) */
-    short noOfNetworks;
-    /** array of destination addresses */
-    union sockunion *destinationAddresses;
-	/** number of local addresses*/
-	short noOfLocalAddresses;
-	/** array of local addresses*/
-	union sockunion *localAddresses;
-    /** maximum number of incoming streams */
-    unsigned short noOfInStreams;
-    /** maximum number of outgoingng streams */
-    unsigned short noOfOutStreams;
-    /** here follow default parameters for instance initialization */
-	/** association type(MASTER or SLAVE)*/
-	int type;
-	/** recv ring*/
-	void *recv_ring;
-	void *ms_assoc;
-	/** ms state*/
-	unsigned ms_state;
-	gboolean deleted;
-    /** marks an association for deletion */
-}MS_Association;
 /******************** Function Definitions ********************************************************/
 
 /*------------------- Functions called by the ULP ------------------------------------------------*/
@@ -145,9 +103,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                    int bufferLength, union sockunion * source_addr,
                    union sockunion * dest_addr);
 
-MS_Association *mdi_retrieveMasterAssociationByTransportAddress(union sockunion * fromAddress,
-                                                   unsigned short fromPort,
-                                                   unsigned short toPort);
 /*------------------- Functions called by the SCTP bundling --------------------------------------*/
 
 /* Used by bundling to send a SCTP-datagramm. 
@@ -245,10 +200,7 @@ int mdi_updateMyAddressList(void);
    from the list of associations and stored in a private but static datastructure.
    Elements of this association data can be read by the following functions.
 */
-unsigned int mdi_associatex( unsigned int   maxSimultaneousInits, 
-							 MS_Association *slave,
-							 short initID,
-							 void *ulp_data);
+unsigned int mdi_associatex(short initID, void *ulp_data);
 /* The following functions return pointer to data of modules of the SCTP. As only these
    modules know the exact type of these data structures, so the returned pointer are
    of type void.
@@ -336,9 +288,6 @@ unsigned int mdi_readLocalTag(void);
 
 void *mdi_readLastRecvRing(void);
 void *mdi_readCurrentMasterAssociation(void);
-MS_Association *retrieveMSAssociationByTransportAddress(union sockunion * fromAddress,
-                                                   unsigned short fromPort,
-                                                   unsigned short toPort);
 
 /* returns: a the start TSN for new association */
 unsigned int mdi_generateStartTSN(void);
@@ -468,10 +417,6 @@ unsigned short mdi_newMasterAssociation(unsigned short local_port,
                    short noOfDestinationAddresses,
                    union sockunion *destinationAddressList,
 				   void *recv_ring);
-
-int mdi_updateMasterLocalAddr(MS_Association* master, 
-			unsigned int noOfLocalAddresses, 
-			union sockunion *localAddresses);
 
 void mdi_displayMasterList(void);
 
