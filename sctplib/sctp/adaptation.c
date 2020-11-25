@@ -1408,6 +1408,8 @@ int adl_recvfrom_ring(struct rte_ring *recv_ring, void* dest, int maxlen, union 
 		rte_mempool_put(adl_message_pool, msg);
 		error_log(ERROR_FATAL, "not ip");
 	}
+	event_logi(VVERBOSE, "got a packet at ring'%s'", recv_ring->name);
+	zlog_data((unsigned char *)msg + sizeof(int), len);
 	len -= 14;/*去掉以太网头*/
 	rte_memcpy(dest, (char*)msg + sizeof(int) + 14, len);
 	/*解析IP头*/
@@ -1431,16 +1433,19 @@ int dispatch_rings()
 	struct sockaddr_in *src_in;
 	struct iphdr *iph;
 	int hlen = 0;
+	event_logii(VVERBOSE, "in adl recv_ring'%s' recv_ring1'%s'",
+				adl_recv_ring->name, adl_recv_ring1->name);
 
 	int i = 0;
 	struct rte_ring *m_ring = NULL;
 	for(i = 0; i < 2; i++)/*轮询两个接收ring*/
 	{
+		event_logi(VVERBOSE, "in dispatch_rings: i = %d", i);
 		if(i == 0)
 			m_ring = adl_recv_ring;
 		else
 			m_ring = adl_recv_ring1;
-		if(i==0 && rte_ring_count(m_ring) > 0)
+		if(rte_ring_count(m_ring) > 0)
 		{
 			length = adl_recvfrom_ring(m_ring, r_rbuf, MAX_MTU_SIZE, &src, &dest);
 			if (length < 0)
@@ -1462,7 +1467,7 @@ int dispatch_rings()
 				}
 				else
 				{
-					length -= hlen;
+					length -= hlen;/*rm iphdr*/
 					mdi_receiveMessageAtRing(m_ring, &r_rbuf[hlen], length, &src, &dest);
 				}
 				break;
@@ -2069,8 +2074,11 @@ int adl_init_adaptation_layer(int *myRwnd, int argc, char *argv[])
 	adl_send_ring = send_ring;
 	adl_send_ring1 = send_ring1;
 	adl_message_pool = message_pool;
-	printf("(%s, %s, %s, %s, %s)\n", adl_recv_ring->name, adl_recv_ring1->name, adl_send_ring->name, adl_send_ring1->name, adl_message_pool->name);
-	if (adl_recv_ring == NULL || adl_recv_ring1 == NULL || adl_send_ring == NULL || adl_send_ring1 == NULL)
+	event_logiiiii(VVERBOSE, "in adl_init_adaptation_layer got rings %s, %s, %s, %s, %s\n", 
+				adl_recv_ring->name, adl_recv_ring1->name, adl_send_ring->name, 
+				adl_send_ring1->name, adl_message_pool->name);
+	if (adl_recv_ring == NULL || adl_recv_ring1 == NULL || 
+				adl_send_ring == NULL || adl_send_ring1 == NULL)
 	{
 		error_log(ERROR_FATAL, "create ring failed!");
 		exit(-1);

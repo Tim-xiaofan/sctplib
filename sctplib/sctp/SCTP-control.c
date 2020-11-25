@@ -732,6 +732,7 @@ int sctlr_init(SCTP_init * init)
 
 		/*gather ip addr in INIT, slave as active peer, must store all ip addr given network cell A
 		 *slave must look like cell B, master must look like cell A */
+        event_log(EXTERNAL_EVENT, "sctlr_init: received INIT chunk in normal");
 		supportedTypes = mdi_getSupportedAddressTypes();
 		nrAddresses = ch_IPaddresses(initCID, supportedTypes, rAddresses, &peerSupportedTypes, &last_source);
 		event_logi(EXTERNAL_EVENT, "there are %d addrs in INIT", nrAddresses);
