@@ -3,11 +3,20 @@
 void zlog_data(const uint8_t* data, int data_len)
 {
 	int i;
+	printf("%04x| ", 0);
+	int line = 16;
 	for(i = 1; i <= data_len; i++)
 	{
 		printf("%02x", data[i - 1]);
 		if(i % 8 == 0 && i % 16 != 0)printf(" - ");
-		if(i % 16 == 0)printf("\n");
+		if(i % 16 == 0)
+		{
+			if(i != data_len)
+			{
+				printf("\n%04x| ", line);
+				line += 16;
+			}
+		}
 		if(i % 8 !=0 && i % 16 != 0)printf(" ");
 	}
 	printf("\n");

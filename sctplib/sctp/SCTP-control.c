@@ -2302,7 +2302,8 @@ void sci_associate(unsigned short noOfOutStreams,
         localData->NumberOfOutStreams = noOfOutStreams;
         localData->NumberOfInStreams = noOfInStreams;
         
-        localData->initChunk = (SCTP_init *) ch_chunkString(initCID);/*store INIT for retransmission later*/
+		/*store INIT for retransmission later*/
+        localData->initChunk = (SCTP_init *) ch_chunkString(initCID);
 		if(localData->initChunk == NULL)
 		{
 			error_log(ERROR_FATAL, "cannot keep INIT for retransmission");
@@ -2328,8 +2329,7 @@ void sci_associate(unsigned short noOfOutStreams,
         localData->initTimer = adl_startTimer(localData->initTimerDuration,
                                                &sci_timer_expired,
                                                TIMER_TYPE_INIT,
-                                               (void *) &localData->associationID, NULL);
-
+											   (void *)&localData->associationID, NULL);
         state = COOKIE_WAIT;
         break;
     default:

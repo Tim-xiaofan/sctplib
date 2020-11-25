@@ -1398,7 +1398,6 @@ int adl_recvfrom_ring(struct rte_ring *recv_ring, void* dest, int maxlen, union 
 	if (msg == NULL)
 		return -1;
 	len = *((int *)msg);
-	//zlog_data((unsigned char*)msg + sizeof(int), len);
 	if(len < 14)
 	{
 		rte_mempool_put(adl_message_pool, msg);
@@ -1463,9 +1462,7 @@ int dispatch_rings()
 				}
 				else
 				{
-					//zlog_data(r_rbuf, length);
 					length -= hlen;
-					//printf("iph_len == %d\n", hlen);
 					mdi_receiveMessageAtRing(m_ring, &r_rbuf[hlen], length, &src, &dest);
 				}
 				break;
