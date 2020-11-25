@@ -1025,7 +1025,8 @@ gboolean sctlr_initAck(SCTP_init * initAck)
         ndAddresses = ch_IPaddresses(initAckCID, supportedTypes, dAddresses, &peerSupportedTypes, &destAddress);
 		/* update master's local addresses*/
 		event_log(EXTERNAL_EVENT, "after update");
-
+		
+		/*update association's dest addresses*/
         mdi_writeDestinationAddresses(dAddresses, ndAddresses);
 
         /* initialize rest of association with data received from peer */

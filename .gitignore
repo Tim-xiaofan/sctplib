@@ -88,4 +88,4 @@ sctplib/sctp/tags
 tags
 *.out
 *.txt
-
+*.output

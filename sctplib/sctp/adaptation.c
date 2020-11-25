@@ -1433,14 +1433,11 @@ int dispatch_rings()
 	struct sockaddr_in *src_in;
 	struct iphdr *iph;
 	int hlen = 0;
-	event_logii(VVERBOSE, "in adl recv_ring'%s' recv_ring1'%s'",
-				adl_recv_ring->name, adl_recv_ring1->name);
 
 	int i = 0;
 	struct rte_ring *m_ring = NULL;
 	for(i = 0; i < 2; i++)/*轮询两个接收ring*/
 	{
-		event_logi(VVERBOSE, "in dispatch_rings: i = %d", i);
 		if(i == 0)
 			m_ring = adl_recv_ring;
 		else

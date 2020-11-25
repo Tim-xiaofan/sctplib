@@ -345,6 +345,27 @@ void *mdi_getAnotherRecvRing(void* recv_ring);
 
 void *mdi_getSendRing(void * recv_ring);
 
+void mdi_displayInstance(SCTP_instance *i)
+{
+	event_log(EXTERNAL_EVENT, "*******************An instance");
+	printf("sctpInstance[%u] with %u inStreams %u outStreams %u rwnd %d local addrs:", 
+				i->default_myRwnd,
+				i->sctpInstanceName, i->noOfInStreams, 
+				i->noOfOutStreams, i->noOfLocalAddresses);
+	int j;
+	for(j = 0; j< i->noOfLocalAddresses; j++)
+	{
+		guchar buf[64];
+		adl_sockunion2str(&i->localAddressList[j], buf, 64);
+		printf("%s ", buf);
+	}
+	printf(" : %d supportedAddressTypes %d and send_ring'%s' recv_ring'%s'\n",
+				i->localPort, i->supportedAddressTypes,
+				((struct rte_ring *)i->send_ring)->name, 
+				((struct rte_ring *)i->recv_ring)->name);
+
+}
+
 void mdi_displayInstanceList(GList *list)
 {
 	GList *gl=NULL;
@@ -352,7 +373,8 @@ void mdi_displayInstanceList(GList *list)
 	{
 		SCTP_instance *tmp = (SCTP_instance *)gl->data;
 		event_log(EXTERNAL_EVENT, "*******************InstanceList");
-		printf("sctpInstance[%u] with %u inStreams %u outStreams %u local addrs:", 
+		printf("sctpInstance[%u] with %u inStreams %u outStreams %u rwnd %d local addrs:", 
+					tmp->default_myRwnd,
 					tmp->sctpInstanceName, tmp->noOfInStreams, 
 					tmp->noOfOutStreams, tmp->noOfLocalAddresses);
 		int i;
@@ -1783,13 +1805,8 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                   bufferLength, source_addr_string, lastFromPort, dest_addr_string,lastDestPort, recv_ring->name, 0, 0);
 
     if (discard == TRUE) {
-        lastFromAddress = NULL;
-        lastDestAddress = NULL;
-        lastFromPort = 0;
-        lastDestPort = 0;
-        sctpInstance = NULL;
-        currentAssociation = NULL;
-        event_logi(INTERNAL_EVENT_0, "mdi_receiveMessageAtRing: discarding packet for incorrect address %s",
+        mdi_resetLastInfo();
+		event_logi(INTERNAL_EVENT_0, "mdi_receiveMessageAtRing: discarding packet for incorrect address %s",
                    dest_addr_string);
         return;
     }
@@ -1867,12 +1884,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
     if (mdi_destination_address_okay_loose(lastMatchedDestAddress) == FALSE) {
 			event_log(VVERBOSE, "maybe another directiong, try again");
 			event_log(VERBOSE, "mdi_receiveMsgAtRing: this packet is not for me, DISCARDING !!!");
-			lastFromAddress = NULL;
-			lastDestAddress = NULL;
-			lastFromPort = 0;
-			lastDestPort = 0;
-			sctpInstance = NULL;
-			currentAssociation = NULL;
+			mdi_resetLastInfo();
 			return;
     }
 
@@ -1930,13 +1942,8 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         error_log(ERROR_MINOR, "mdi_receiveMsgAtRing: discarding illegal packet....... :-)");
 
         /* silently discard */
-         lastFromAddress = NULL;
-         lastDestAddress = NULL;
-         lastFromPort = 0;
-         lastDestPort = 0;
-         sctpInstance = NULL;
-         currentAssociation = NULL;
-         return;
+		mdi_resetLastInfo();
+        return;
     }
 
     /* check if sctp-message belongs to an existing association */
@@ -1945,13 +1952,8 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
          /* This is not very elegant, but....only used when assoc is being build up, so :-D */
          if (rbu_datagramContains(CHUNK_ABORT, chunkArray) == TRUE) {
             event_log(INTERNAL_EVENT_0, "mdi_receiveMsg: Found ABORT chunk, discarding it !");
-            lastFromAddress = NULL;
-            lastDestAddress = NULL;
-            lastFromPort = 0;
-            lastDestPort = 0;
-            sctpInstance = NULL;
-            currentAssociation = NULL;
-            return;
+            mdi_resetLastInfo();
+			return;
          }
          if (rbu_datagramContains(CHUNK_SHUTDOWN_ACK, chunkArray) == TRUE) {
             event_log(INTERNAL_EVENT_0,
@@ -1967,47 +1969,27 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
 
             /* send an ABORT with peers veri-tag, set T-Bit */
             event_log(VERBOSE, "mdi_receiveMsg: sending CHUNK_SHUTDOWN_COMPLETE  ");
-            lastFromPort = 0;
-            lastDestPort = 0;
-            lastDestAddress = NULL;
-            lastFromAddress = NULL;
-            sctpInstance = NULL;
-            currentAssociation = NULL;
-            return;
+            mdi_resetLastInfo();
+			return;
         }
         if (rbu_datagramContains(CHUNK_SHUTDOWN_COMPLETE, chunkArray) == TRUE) {
             event_log(INTERNAL_EVENT_0,
                      "mdi_receiveMsgAtRing: Found SHUTDOWN_COMPLETE chunk, discarding it !");
-            lastFromPort = 0;
-            lastDestPort = 0;
-            lastDestAddress = NULL;
-            lastFromAddress = NULL;
-            sctpInstance = NULL;
-            currentAssociation = NULL;
-            return;
+            mdi_resetLastInfo();
+			return;
         }
         if (rbu_datagramContains(CHUNK_COOKIE_ACK, chunkArray) == TRUE) {
             event_log(INTERNAL_EVENT_0, "mdi_receiveMsgAtRing: Found COOKIE_ACK chunk, discarding it !");
-            lastFromPort = 0;
-            lastDestPort = 0;
-            lastDestAddress = NULL;
-            lastFromAddress = NULL;
-            sctpInstance = NULL;
-            currentAssociation = NULL;
-            return;
+            mdi_resetLastInfo();
+			return;
         }
 
         /* section 8.4.7) : Discard the datagram, if it contains a STALE-COOKIE ERROR */
         if (rbu_scanDatagramForError(message->sctp_pdu, len, ECC_STALE_COOKIE_ERROR) == TRUE) {
             event_log(INTERNAL_EVENT_0,
                           "mdi_receiveMsgAtRing: Found STALE COOKIE ERROR, discarding packet !");
-            lastFromPort = 0;
-            lastDestPort = 0;
-            lastDestAddress = NULL;
-            lastFromAddress = NULL;
-            sctpInstance = NULL;
-            currentAssociation = NULL;
-            return;
+            mdi_resetLastInfo();
+			return;
         }
 
         if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT)) != NULL) {
@@ -4921,6 +4903,7 @@ unsigned int mdi_associatex(short initCID, void *ulp_data)
 	if(instance == NULL)
 	{
 		event_log(INTERNAL_EVENT_0, "mdi_associatex: cannot get instance");
+        LEAVE_LIBRARY("mdi_associate");
 		return 0;
 	}
 	else
@@ -4929,6 +4912,7 @@ unsigned int mdi_associatex(short initCID, void *ulp_data)
 		{
 			event_log(INTERNAL_EVENT_0,
 						"mdi_associatex: instance does not include anothorInstance");
+            LEAVE_LIBRARY("mdi_associate");
 			return 0;
 		}
 		instance1 = (SCTP_instance *)instance->anothorInstance;
@@ -4962,6 +4946,7 @@ unsigned int mdi_associatex(short initCID, void *ulp_data)
             return 0;
         }
     }
+	instance->default_myRwnd = ch_receiverWindow(initCID);
 	if(noOfaddressesInINIT > instance->noOfLocalAddresses)
 		if(mdi_updateInstanceByAddress(instance, noOfaddressesInINIT,
 					addressesInINIT) == 0)
@@ -4970,6 +4955,7 @@ unsigned int mdi_associatex(short initCID, void *ulp_data)
 			mdi_displayInstanceList(InstanceList);
 		}
     event_logi(VERBOSE, "Chose local port %u for associate !", instance->localPort);
+	mdi_displayInstance(instance);
 
     withPRSCTP = librarySupportsPRSCTP;
     /* Create new association TCB*/
@@ -5176,7 +5162,7 @@ static int mdi_createInstanceByTansportAddress(
     sctpInstance->default_pathMaxRetransmits = MAX_PATH_RETRANSMITS ;
     sctpInstance->default_maxInitRetransmits = MAX_INIT_RETRANSMITS;
     /* using the static variable defined after initialization of the adaptation layer */
-    sctpInstance->default_myRwnd = myRWND/2;
+    sctpInstance->default_myRwnd = 0;
     sctpInstance->default_delay = SACK_DELAY;
     sctpInstance->default_ipTos = IPTOS_DEFAULT;
     sctpInstance->default_rtoMin = RTO_MIN;
@@ -5512,7 +5498,8 @@ int mdi_readLastFromAddress(union sockunion* fromAddress)
 int mdi_readLastMatchedFromAddress(union sockunion* fromAddress)
 {
     if (lastMatchedFromAddress == NULL) {
-        error_log(ERROR_FATAL, "mdi_readLastMatchedFromAddress: no last from address");
+        error_log(ERROR_FATAL, 
+					"readLastMatchedFromAddress: no last matched from address");
     } else {
         memcpy(fromAddress, lastMatchedFromAddress, sizeof(union sockunion));
         return 0;
@@ -5535,10 +5522,10 @@ int mdi_readLastDestAddress(union sockunion* destAddress)
     return 1;
 }
 
-int mdi_readLastiMatchedDestAddress(union sockunion* destAddress)
+int mdi_readLastMatchedDestAddress(union sockunion* destAddress)
 {
     if (lastMatchedDestAddress == NULL) {
-        error_log(ERROR_MAJOR, "mdi_readLastMatchedDestAddress: no last dest address");
+        error_log(ERROR_MAJOR, "readLastMatchedDestAddress: no last matched dest address");
     } else {
         memcpy(destAddress, lastMatchedDestAddress, sizeof(union sockunion));
         return 0;
@@ -5556,6 +5543,10 @@ short mdi_readLastFromPath(void)
     return lastFromPath;
 }
 
+short mdi_readLastMatchedFromPath(void)
+{
+    return lastMatchedFromPath;
+}
 /**
  * read the port of the sender of the last received DG (host byte order)
  * @return the port of the sender of the last received DG (host byte order)
@@ -5570,6 +5561,15 @@ unsigned short mdi_readLastFromPort(void)
     }
 }
 
+unsigned short mdi_readLastMatchedFromPort(void)
+{
+    if (lastMatchedFromAddress == NULL) {
+        error_log(ERROR_MINOR, "readLastMatchedFromPort: no last matched from address");
+        return 0;
+    } else {
+        return lastMatchedFromPort;
+    }
+}
 
 /**
  * read the port of the destination of the last received DG (host byte order)
@@ -5577,12 +5577,22 @@ unsigned short mdi_readLastFromPort(void)
  */
 unsigned short mdi_readLastDestPort(void)
 {
-    if (lastFromAddress == NULL) {
-        error_log(ERROR_MINOR, "readLastDestPort: no last from address");
+    if (lastDestAddress == NULL) {
+        error_log(ERROR_MINOR, "readLastDestPort: no last dest address");
 
         return 0;
     } else {
         return lastDestPort;
+    }
+}
+
+unsigned short mdi_readLastMatchedDestPort(void)
+{
+    if (lastMatchedDestAddress == NULL) {
+        error_log(ERROR_MINOR, "readLastMatchedDestPort: no last matched dest address");
+        return 0;
+    } else {
+        return lastMatchedDestPort;
     }
 }
 

@@ -287,7 +287,6 @@ unsigned int mdi_readTagRemote(void);
 unsigned int mdi_readLocalTag(void);
 
 void *mdi_readLastRecvRing(void);
-void *mdi_readCurrentMasterAssociation(void);
 
 /* returns: a the start TSN for new association */
 unsigned int mdi_generateStartTSN(void);
@@ -311,21 +310,24 @@ gboolean mdi_addressListContainsLocalhost(unsigned int noOfAddresses,
     Returns 0 if successful, 1 if address could not be set !
 */
 int mdi_readLastFromAddress(union sockunion* fromAddress);
-
+int mdi_readLastMatchedFromAddress(union sockunion* fromAddress);
 
 /* reads the path from which the last DG was received. -1 is returned if no DG was received.
 */
 short mdi_readLastFromPath(void);
+short mdi_readLastMatchedFromPath(void);
 
 
 /* returns the port of the sender of the last received DG.
 */
 unsigned short mdi_readLastFromPort(void);
+unsigned short mdi_readLastMatchedFromPort(void);
 
 
 /* returns the port of the destination of the last received DG.
 */
 unsigned short mdi_readLastDestPort(void);
+unsigned short mdi_readLastMatchedDestPort(void);
 
 
 unsigned int mdi_readLastInitiateTag(void);
