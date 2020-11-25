@@ -5144,38 +5144,12 @@ static int mdi_createInstanceByTansportAddress(
         return 0;
     }
 
-   if (with_ipv4 && sctp_socket==0) {/*没有分配socket*/
-         sctp_socket = adl_get_sctpv4_socket();
-         if (!sctp_socket)
-            error_log(ERROR_FATAL, "IPv4 socket creation failed");
-
-         adl_rscb_code = adl_register_socket_cb(sctp_socket,&mdi_dummy_callback);
-         if (!adl_rscb_code)
-             error_log(ERROR_FATAL, "registration of IPv4 socket call back function failed");
-    }
-	if(with_ipv4 && sctp_rring == NULL &&
-				sctp_rring1 ==NULL && sctp_sring ==NULL &&
-				sctp_sring1 == NULL && sctp_message_pool == NULL)
+	if(with_ipv4 == FALSE ||sctp_rring == NULL ||
+				sctp_rring1 ==NULL || sctp_sring ==NULL ||
+				sctp_sring1 == NULL || sctp_message_pool == NULL)
 	{
-		sctp_rring = (struct rte_ring*)malloc(sizeof(struct rte_ring));
-		sctp_rring1 = (struct rte_ring*)malloc(sizeof(struct rte_ring));
-		sctp_sring = (struct rte_ring*)malloc(sizeof(struct rte_ring));
-		sctp_sring1 = (struct rte_ring*)malloc(sizeof(struct rte_ring));
-		sctp_message_pool = (struct rte_mempool*)malloc(sizeof(struct rte_mempool));
-		if(sctp_rring == NULL || sctp_rring1 == NULL ||
-					sctp_sring == NULL || sctp_sring1 == NULL || sctp_message_pool == NULL) 
-		{
-			error_log(ERROR_FATAL, "sctp: alloc memory for rings failed.\n");
-			exit(-1);
-		}
-		adl_get_sctp_rings(sctp_rring, sctp_rring1, sctp_sring, sctp_sring1, sctp_message_pool);
-		if(sctp_rring == NULL || sctp_rring1 == NULL ||
-					sctp_sring == NULL || sctp_sring1 == NULL)
-		{
-			error_log(ERROR_FATAL, "sctp rings create falied\n");
-			exit(-1);
-		}
-		adl_register_rings_cb(sctp_rring, sctp_rring1, sctp_sring, sctp_sring1, &mdi_dummy_callback);
+		error_log(ERROR_FATAL, "mdi_createInstanceByTansportAddress: dpdk ring not set");
+		exit(-1);
 	}
     if (with_ipv4 == TRUE) {
         ipv4_users++;
@@ -5535,6 +5509,17 @@ int mdi_readLastFromAddress(union sockunion* fromAddress)
     return 1;
 }
 
+int mdi_readLastMatchedFromAddress(union sockunion* fromAddress)
+{
+    if (lastMatchedFromAddress == NULL) {
+        error_log(ERROR_FATAL, "mdi_readLastMatchedFromAddress: no last from address");
+    } else {
+        memcpy(fromAddress, lastMatchedFromAddress, sizeof(union sockunion));
+        return 0;
+    }
+    return 1;
+}
+
 /**
  * sets the address from which the last datagramm was received (host byte order).
  * @returns  0 if successful, 1 if address could not be set !
@@ -5545,6 +5530,17 @@ int mdi_readLastDestAddress(union sockunion* destAddress)
         error_log(ERROR_MAJOR, "mdi_readLastDestAddress: no last dest address");
     } else {
         memcpy(destAddress, lastDestAddress, sizeof(union sockunion));
+        return 0;
+    }
+    return 1;
+}
+
+int mdi_readLastiMatchedDestAddress(union sockunion* destAddress)
+{
+    if (lastMatchedDestAddress == NULL) {
+        error_log(ERROR_MAJOR, "mdi_readLastMatchedDestAddress: no last dest address");
+    } else {
+        memcpy(destAddress, lastMatchedDestAddress, sizeof(union sockunion));
         return 0;
     }
     return 1;

@@ -979,8 +979,9 @@ gboolean sctlr_initAck(SCTP_init * initAck)
 	switch (state) {
     case COOKIE_WAIT:
 
-        event_log(EXTERNAL_EVENT, "event: initAck in state COOKIE_WAIT");
-        /* Set length of chunk to HBO(host byte order) !! */
+        event_log(EXTERNAL_EVENT, "normal event: initAck in state COOKIE_WAIT");
+        /* Set length of chunk to HBO(host byte order) !! 
+		 * retrieve INIT stored before*/
         initCID = ch_makeChunk((SCTP_simple_chunk *) localData->initChunk);
 
         /* FIXME: check also the noPeerOutStreams <= noLocalInStreams */
@@ -1005,7 +1006,7 @@ gboolean sctlr_initAck(SCTP_init * initAck)
             return return_state;
         }
 
-        result = mdi_readLastFromAddress(&destAddress);
+        result = mdi_readLastMatchedFromAddress(&destAddress);
         if (result != 0) {
             if (localData->initTimer != 0) {
                 sctp_stopTimer(localData->initTimer);
