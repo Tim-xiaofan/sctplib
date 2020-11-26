@@ -1222,17 +1222,18 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
        return;
     }
 
+	event_log(VVERBOSE, "sctlr_cookie_echo: call mdi_readSCTP_control");
     if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
         noOfDestinationAddresses = 1;
         primaryDestinationAddress = 0;
 
         /* why is INSTANCE_NAME here zero ? */
+		event_log(VVERBOSE, "sctlr_cookie_echo: call newAssociation");
         noSuccess = mdi_newAssociation(NULL, mdi_readLastDestPort(),
                                         mdi_readLastFromPort(),
                                         cookie_local_tag, /* this is MY tag */
                                         primaryDestinationAddress,
                                         noOfDestinationAddresses, &destAddress);
-
         if (noSuccess) {/*关联加入链表失败*/
             /* new association could not be entered in the list of associations */
             error_log(ERROR_MAJOR, "sctlr_cookie_echo: Creation of association failed");

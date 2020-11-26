@@ -411,7 +411,7 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
             rxc_data_chunk_rx((SCTP_data_chunk*) chunk, address_index);
             data_chunk_received = TRUE;
             break;
-        case CHUNK_INIT:/*prepare MASTER and SLAVE，enter pre queue*/
+        case CHUNK_INIT:/*create association A'*/
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received INIT chunk");
             association_state = sctlr_init((SCTP_init *) chunk);
             break;
@@ -449,11 +449,11 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
             break;
         case CHUNK_COOKIE_ECHO:
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ECHO chunk");
-            sctlr_cookie_echo((SCTP_cookie_echo *) chunk);/*A端建立偶联控制块*/
+            sctlr_cookie_echo((SCTP_cookie_echo *) chunk);/*create association_state A'*/
             break;
         case CHUNK_COOKIE_ACK:
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ACK chunk");
-            sctlr_cookieAck((SCTP_simple_chunk *) chunk);/*Z端偶联状态设置为established*/
+            sctlr_cookieAck((SCTP_simple_chunk *) chunk);/*set B' state to established*/
             break;
      /* case CHUNK_ECNE:
         case CHUNK_CWR:
