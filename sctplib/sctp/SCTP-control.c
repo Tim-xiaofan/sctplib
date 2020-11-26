@@ -706,7 +706,7 @@ int sctlr_init(SCTP_init * init)
         return return_state;
     }
 
-    result = mdi_readLastFromAddress(&last_source);
+    result = mdi_readLastInstanceFromAddress(&last_source);
     if (result != 0) {
         if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL)
 		{
@@ -998,7 +998,7 @@ gboolean sctlr_initAck(SCTP_init * initAck)
             return return_state;
         }
 
-        result = mdi_readLastFromAddress(&destAddress);
+        result = mdi_readLastInstanceDestAddress(&destAddress);
         if (result != 0) {
             if (localData->initTimer != 0) {
                 sctp_stopTimer(localData->initTimer);
@@ -1157,8 +1157,8 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
 
     event_log(INTERNAL_EVENT_0, "sctlr_cookie_echo() is being executed");
 
+	/*store the chunk into chunklist*/
     cookieCID = ch_makeChunk((SCTP_simple_chunk *) cookie_echo);
-
     if (ch_chunkType(cookieCID) != CHUNK_COOKIE_ECHO) {
         /* error logging */
         ch_forgetChunk(cookieCID);
@@ -1166,7 +1166,7 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
         return;
     }
     /* section 5.2.4. 1) and 2.) */
-    if (ch_goodCookie(cookieCID)) {
+    if (!ch_goodCookie(cookieCID)) {
         ch_forgetChunk(cookieCID);
         event_log(EXTERNAL_EVENT, "event: invalidCookie received");
         return;
@@ -1180,15 +1180,20 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
     /* these two will be zero, if association is not up yet */
     local_tag  = mdi_readLocalTag();
     remote_tag = mdi_readTagRemote();
-
     if ((mdi_readLastInitiateTag()   != cookie_local_tag) &&
         (mdi_readLastFromPort()      != ch_CookieSrcPort(cookieCID)) &&
         (mdi_readLastDestPort()      != ch_CookieDestPort(cookieCID)))  {
 
+		event_logii(EXTERNAL_EVENT, "lastInitiateTag[%0x], cookie_local_tag[%0x]", 
+					mdi_readLastInitiateTag(), cookie_local_tag);
+		event_logii(EXTERNAL_EVENT, "lastFromPort[%u], cookieSrcPort[%u]", 
+					mdi_readLastFromPort(), ch_CookieSrcPort(cookieCID));
+		event_logii(EXTERNAL_EVENT, "lastDestPort[%u], cookieDestPort[%u]", 
+					mdi_readLastDestPort(), ch_CookieDestPort(cookieCID));
+        event_log(EXTERNAL_EVENT, "event: good cookie echo received, but with incorrect verification tag");
         ch_forgetChunk(cookieCID);
         ch_deleteChunk(initCID);
         ch_deleteChunk(initAckCID);
-        event_log(EXTERNAL_EVENT, "event: good cookie echo received, but with incorrect verification tag");
         return;
     }
 

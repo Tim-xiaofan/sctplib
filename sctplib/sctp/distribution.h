@@ -308,29 +308,30 @@ unsigned int mdi_generateStartTSN(void);
 gboolean mdi_addressListContainsLocalhost(unsigned int noOfAddresses,
                            union sockunion* addressList);
 
-
+int mdi_readLastInstanceFromAddress(union sockunion* fromAddress);
+int mdi_readLastInstanceDestAddress(union sockunion* destAddress);
+unsigned short mdi_readLastInstanceFromPort(void);
+unsigned short mdi_readLastInstanceDestPort(void);
+void mdi_writeLastInstanceInitiateTag(unsigned int initiateTag);
+unsigned int mdi_readLastInstanceInitiateTag(void);
 /* sets the address from which the last datagramm was received (host byte order).
     Returns 0 if successful, 1 if address could not be set !
 */
 int mdi_readLastFromAddress(union sockunion* fromAddress);
-int mdi_readLastMatchedFromAddress(union sockunion* fromAddress);
 
 /* reads the path from which the last DG was received. -1 is returned if no DG was received.
 */
 short mdi_readLastFromPath(void);
-short mdi_readLastMatchedFromPath(void);
 
 
 /* returns the port of the sender of the last received DG.
 */
 unsigned short mdi_readLastFromPort(void);
-unsigned short mdi_readLastMatchedFromPort(void);
 
 
 /* returns the port of the destination of the last received DG.
 */
 unsigned short mdi_readLastDestPort(void);
-unsigned short mdi_readLastMatchedDestPort(void);
 
 
 unsigned int mdi_readLastInitiateTag(void);

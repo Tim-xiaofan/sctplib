@@ -263,6 +263,7 @@ static unsigned int nextAssocId = 1;
 static union sockunion *lastFromAddress;
 static union sockunion *lastDestAddress;
 
+/*actully saddr and daddr of datagram*/
 static union sockunion *lastInstanceFromAddress;
 static union sockunion *lastInstanceDestAddress;
 
@@ -272,8 +273,10 @@ static unsigned short lastDestPort;
 static unsigned int lastInitiateTag;
 static void *lastRecvRing;/*last recv dpdk ring*/
 
+/*actully sport, dporte and tag*/
 static unsigned short lastInstanceFromPort;
 static unsigned short lastInstanceDestPort;
+static unsigned int lastInstanceInitiateTag;
 //static unsigned int lastMatchedInitiateTag;
 //static void *lastMatchedRecvRing;/*last recv dpdk ring*/
 
@@ -1540,7 +1543,7 @@ mdi_receiveMessage(gint socket_fd,
         if (lastFromPort != currentAssociation->remotePort || lastDestPort != currentAssociation->localPort) {
             error_logiiii(ERROR_FATAL,
                           "port mismatch in received DG (lastFromPort=%u, assoc->remotePort=%u, lastDestPort=%u, assoc->localPort=%u ",   lastFromPort, currentAssociation->remotePort,                          lastDestPort, currentAssociation->localPort);
-            mdi_resetLastInfo();           
+			mdi_resetLastInfo();           
 			return;
         }
 
@@ -1566,7 +1569,7 @@ mdi_receiveMessage(gint socket_fd,
         if (!sourceAddressExists) {
             error_log(ERROR_MINOR,
                       "source address of received DG is not in the destination addresslist");
-			mdi_resetLastInfo(); 
+			mdi_resetLastInfo();
 			return;
         }
 
@@ -1885,6 +1888,8 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
         }
     }
 
+	event_log(VVERBOSE, "mdi_receiveMsgAtRing:datagram handled by instance");
+	mdi_displayInstance(sctpInstance);
     if (mdi_destination_address_okay_loose(lastInstanceDestAddress) == FALSE) {
 			event_log(VVERBOSE, "maybe another directiong, try again");
 			event_log(VERBOSE, "mdi_receiveMsgAtRing: this packet is not for me, DISCARDING !!!");
@@ -2090,8 +2095,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                           "port mismatch in received DG (lastFromPort=%u, assoc->remotePort=%u, lastDestPort=%u, assoc->localPort=%u ",   
 						  lastFromPort, currentAssociation->remotePort,                          
 						  lastDestPort, currentAssociation->localPort);
-            currentAssociation = NULL;
-            sctpInstance = NULL;
             mdi_resetLastInfo();
 			return;
         }
@@ -2163,16 +2166,12 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
             /* TODO : make sure that if it is the peer's tag also T-Bit is set */
             if ((lastInitiateTag != currentAssociation->tagLocal &&
                  lastInitiateTag != currentAssociation->tagRemote) || initFound == TRUE) {
-                currentAssociation = NULL;
-                sctpInstance = NULL;
                 mdi_resetLastInfo();
 				return;
             }
         }
         if (rbu_datagramContains(CHUNK_SHUTDOWN_ACK, chunkArray) == TRUE) {
             if (initFound == TRUE) {
-                currentAssociation = NULL;
-                sctpInstance = NULL;
                 mdi_resetLastInfo();
 				return;
             }
@@ -2186,8 +2185,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                 bu_put_Ctrl_Chunk(ch_chunkString(shutdownCompleteCID),NULL);
                 bu_sendAllChunks(NULL);
                 ch_deleteChunk(shutdownCompleteCID);
-                currentAssociation = NULL;
-                sctpInstance = NULL;
                 mdi_resetLastInfo();
 				return;
             }
@@ -5414,8 +5411,6 @@ int mdi_setSeletedSendRing(void *send_ring)
 
 void mdi_resetLastInfo(void)
 {
-	currentAssociation = NULL;
-	sctpInstance = NULL;
 	lastFromPort = 0;
 	lastDestPort = 0;
 	lastDestAddress = NULL;
@@ -5424,6 +5419,8 @@ void mdi_resetLastInfo(void)
 	lastInstanceDestPort = 0;
 	lastInstanceFromAddress = NULL;
 	lastInstanceDestAddress = NULL;
+	sctpInstance = NULL;
+	currentAssociation = NULL;
 }
 
 unsigned short mdi_getUnusedInstanceName(void)
@@ -5483,6 +5480,17 @@ void *mdi_readSelectedSendRing(void)
 	return (void *)selectedSendRing;
 }
 
+int mdi_readLastInstanceFromAddress(union sockunion* fromAddress)
+{
+    if (lastInstanceFromAddress == NULL) {
+        error_log(ERROR_FATAL, "mdi_readLastInstanceFromAddress: no last instance from address");
+    } else {
+        memcpy(fromAddress, lastInstanceFromAddress, sizeof(union sockunion));
+        return 0;
+    }
+    return 1;
+}
+
 int mdi_readLastFromAddress(union sockunion* fromAddress)
 {
     if (lastFromAddress == NULL) {
@@ -5494,7 +5502,16 @@ int mdi_readLastFromAddress(union sockunion* fromAddress)
     return 1;
 }
 
-
+int mdi_readLastInstanceDestAddress(union sockunion* destAddress)
+{
+    if (lastInstanceDestAddress == NULL) {
+        error_log(ERROR_FATAL, "mdi_readLastInstanceDestAddress: no last instance dest address");
+    } else {
+        memcpy(destAddress, lastInstanceDestAddress, sizeof(union sockunion));
+        return 0;
+    }
+    return 1;
+}
 /**
  * sets the address from which the last datagramm was received (host byte order).
  * @returns  0 if successful, 1 if address could not be set !
@@ -5521,6 +5538,25 @@ short mdi_readLastFromPath(void)
     return lastFromPath;
 }
 
+unsigned short mdi_readLastInstanceFromPort(void)
+{
+    if (lastInstanceFromAddress == NULL) {
+        error_log(ERROR_MINOR, "readLastInstanceFromPort: no last instance from address");
+        return 0;
+    } else {
+        return lastInstanceFromPort;
+    }
+}
+
+unsigned short mdi_readLastInstanceDestPort(void)
+{
+    if (lastInstanceDestAddress == NULL) {
+        error_log(ERROR_MINOR, "readLastInstanceFromPort: no last instance dest address");
+        return 0;
+    } else {
+        return lastInstanceDestPort;
+    }
+}
 /**
  * read the port of the sender of the last received DG (host byte order)
  * @return the port of the sender of the last received DG (host byte order)
@@ -5557,6 +5593,17 @@ void *mdi_readLastRecvRing(void)
 	return lastRecvRing;
 }
 
+/* write the initiate tag of a-side to be used as verification tag for the initAck */
+void mdi_writeLastInstanceInitiateTag(unsigned int initiateTag)
+{
+    lastInstanceInitiateTag = initiateTag;
+}
+
+/* write the initiate tag of a-side to be used as verification tag for the initAck */
+unsigned int mdi_readLastInstanceInitiateTag(void)
+{
+    return lastInstanceInitiateTag;
+}
 /* write the initiate tag of a-side to be used as verification tag for the initAck */
 void mdi_writeLastInitiateTag(unsigned int initiateTag)
 {
@@ -6378,7 +6425,7 @@ mdi_newAssociation(void*  sInstance,
     event_logi(INTERNAL_EVENT_0, "entering association %08x into list", currentAssociation->assocId);
 
     AssociationList = g_list_insert_sorted(AssociationList, currentAssociation, &compareAssociationIDs);
-
+	mdi_displayAssociationList(AssociationList);
     return 0;
 }                               /* end: mdi_newAssociation */
 
