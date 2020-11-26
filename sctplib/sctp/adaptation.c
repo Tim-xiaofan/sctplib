@@ -881,40 +881,55 @@ int adl_sendUdpData(int sfd, unsigned char *buf, int length,
 	return result;
 }
 
-int adl_send_message_ring(struct rte_ring* sr, void *buf, int len, union sockunion *dest, unsigned char tos) 
+
+/**
+	 * function to be called when library sends a message on an dpdk ring
+	 * @param  send_ring the socket file descriptor where data will be sent
+	 * @param  buf pointer to a buffer, where data to be sent is stored
+	 * @param  len number of bytes to be sent
+	 */
+int adl_send_message_at_ring(void *send_ring, void *buf, int len)
 {
-	int txmt_len = 0, ret = -1;
-	//unsigned char old_tos;
-	switch (sockunion_family(dest))
+	struct rte_ring *sr = (struct rte_ring *)send_ring;
+	if(sr == NULL)
 	{
-		case AF_INET:
-			number_of_sendevents++;
-			event_logiiii(VERBOSE,
-						"AF_INET : adl_send_message_ring : ring : %s, len %d, destination : %s, send_events %u",
-						sr->name, len, inet_ntoa(dest->sin.sin_addr), number_of_sendevents);
-			void *msg = NULL;
-			ret = rte_mempool_get(adl_message_pool, &msg);
-			if(ret < 0)
-				error_logi(ERROR_MAJOR, "AF_INT: rte_mempool_get err='%s'", strerror(0 - ret));
-			if(msg == NULL)
-				error_logi(ERROR_MAJOR, "AF_INT: rte_mempool_get err='%s'", "msg==NULL");
-			rte_memcpy(msg, &len, sizeof(int));
-			rte_memcpy((char*)msg + sizeof(int), buf, len);
-			if((ret = rte_ring_enqueue(sr, msg)) < 0)
-			{
-				error_logi(ERROR_MAJOR, "AF_INET : rte_ring_enqueue err='%s'", "no buffs in ring");
-				rte_mempool_put(adl_message_pool, msg);
-				txmt_len = -1;
-			}
-			break;
-		default:
-			error_logi(ERROR_MAJOR,
-						"adl_send_message : Adress Family %d not supported here",
-						sockunion_family(dest));
-			txmt_len = -1;
+		error_log(ERROR_FATAL, 
+					"adl_send_message_at_ring: attempt to send at null ring");
+		return -1;
 	}
-	return txmt_len;
+	else if(strcmp(sr->name, adl_send_ring->name) !=0 &&
+				strcmp(sr->name, adl_send_ring1->name) != 0)
+	{
+		error_logi(ERROR_FATAL, 
+					"adl_send_message_at_ring: attempt to send at unknown ring[%s]",
+					sr->name);
+		exit(-1);
+	}
+	event_logii(VERBOSE,
+				"AF_INET : adl_send_message_at_ring : send_ring[%s], len[%d]",
+				sr->name, len);
+	void *msg = NULL;
+	if(rte_mempool_get(adl_message_pool, &msg) < 0)
+	{
+		error_log(ERROR_FATAL, "adl_send_message_at_ring:failed to get message buffer");
+		exit(-1);
+	}
+	if(msg == NULL)
+	{
+		error_log(ERROR_FATAL, "adl_send_message_at_ring:failed to get message buffer");
+		return -1;
+	}
+	rte_memcpy(msg, &len, sizeof(int));
+	rte_memcpy((char*)msg + sizeof(int), buf, len);
+	if(rte_ring_enqueue(sr, msg) < 0)
+	{
+		error_log(ERROR_FATAL, "Failed to send message->discard");
+		rte_mempool_put(adl_message_pool, msg);
+		return -1;
+	}
+	return len;
 }
+
 /**
 	 * function to be called when library sends a message on an SCTP socket
 	 * @param  sfd the socket file descriptor where data will be sent

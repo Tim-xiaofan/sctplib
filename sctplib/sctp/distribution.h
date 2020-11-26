@@ -276,11 +276,14 @@ void *mdi_readSCTP_control(void);
  */
 unsigned int mdi_readAssociationID(void);
 
+void *mdi_readAnotherInstanceSendRing(void);
+void *mdi_readInstanceSendRing(void);
 
 
 /* returns: a ID  for new association */
 unsigned int mdi_generateTag(void);
 
+int mdi_setSeletedSendRing(void *send_ring);
 
 
 unsigned int mdi_readTagRemote(void);

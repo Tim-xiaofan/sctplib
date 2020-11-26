@@ -108,7 +108,7 @@ gint adl_get_sctpv6_socket(void);
  * @param	dest_len size of the address
  * @return returns number of bytes actually sent, or error
  */
-int adl_send_message_ring(struct rte_ring* sr, void *buf, int len, union sockunion *dest, unsigned char tos); 
+int adl_send_message_at_ring(void *sr, void *buf, int len); 
 /**
  * function to be called when we get a message from a peer sctp instance in the poll loop
  * @param  sfd the socket file descriptor where data can be read...
