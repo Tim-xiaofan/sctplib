@@ -1251,6 +1251,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
                    union sockunion * dest_addr)
 {/*start mdi*/
 	//zlog_data(buffer, bufferLength);
+	event_logii(VVERBOSE, "mdi_receiveMessageAtRing:after rm IP hdr packet len = %d at %p", bufferLength, buffer);
 	SCTP_message *message;
     SCTP_init_fixed *initChunk = NULL;
     guchar* initPtr = NULL;
@@ -1333,8 +1334,8 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer
     adl_sockunion2str(dest_addr, dest_addr_string, SCTP_MAX_IP_LEN);
 
     event_logiiiiiiii(EXTERNAL_EVENT,
-                  "mdi_receiveMessageAtRing : len %d, sourceaddress : %s, src_port %u, dest: %s, dest_port %u, ring: %s [%d%d]",
-                  bufferLength, source_addr_string, lastFromPort, dest_addr_string,lastDestPort, recv_ring->name, 0, 0);
+                  "mdi_receiveMessageAtRing : len %d, sourceaddress : %s, src_port %u, dest: %s, dest_port %u, ring: %s, at%p, [%d]",
+                  bufferLength, source_addr_string, lastFromPort, dest_addr_string,lastDestPort, recv_ring->name, buffer, 0);
 
     if (discard == TRUE) {
         mdi_resetLastInfo();

@@ -445,7 +445,7 @@ static unsigned int number_of_sendevents = 0;
 /* a static receive buffer  */
 static unsigned char rbuf[MAX_MTU_SIZE + 20];
 /* a static receive buffer*/
-static unsigned char r_rbuf[MAX_MTU_SIZE + 20];
+static void *msg;
 /* a static value that keeps currently treated timer id */
 static unsigned int current_tid = 0;
 
@@ -1403,45 +1403,63 @@ int adl_get_message(int sfd, void *dest, int maxlen, union sockunion *from, sock
 
 	return len;
 }
-/*int sfd, void *dest, int maxlen, union sockunion *from, union sockunion *to)*/
-int adl_recvfrom_ring(struct rte_ring *recv_ring, void* dest, int maxlen, union sockunion *from, union sockunion *to)
+/*dpdk ring, void *dest, union sockunion *from, union sockunion *to)*/
+void *adl_recv_from_ring(struct rte_ring *recv_ring, int *msg_len, union sockunion *from, union sockunion *to)
 {
-	int len;
-	void *msg;
 	if (rte_ring_dequeue(recv_ring, &msg) < 0)
-		return -1;
+	{
+		*msg_len = 0;
+		return NULL;
+	}
 	if (msg == NULL)
-		return -1;
-	len = *((int *)msg);
+	{
+		*msg_len = 0;
+		return NULL;
+	}
+	int len = *((int *)msg);
 	if(len < 14)
 	{
 		rte_mempool_put(adl_message_pool, msg);
 		error_log(ERROR_FATAL, "not ether");
+		*msg_len = 0;
+		return NULL;
 	}
-	if(len < 20)
+	if(len < 34)
 	{
 		rte_mempool_put(adl_message_pool, msg);
 		error_log(ERROR_FATAL, "not ip");
+		*msg_len = 0;
+		return NULL;
 	}
-	event_logi(VVERBOSE, "got a packet at ring'%s'", recv_ring->name);
-	zlog_data((unsigned char *)msg + sizeof(int), len);
-	len -= 14;/*去掉以太网头*/
-	rte_memcpy(dest, (char*)msg + sizeof(int) + 14, len);
+	//rte_memcpy(msg, (char*)msg + sizeof(int) + 14, len);
 	/*解析IP头*/
 	struct iphdr *iph;
-	if ((dest == NULL) || (from == NULL) || (to == NULL))
-		return -1;
-	iph = (struct iphdr *)dest;
+	if ((msg == NULL) || (from == NULL) || (to == NULL))
+	{
+		*msg_len = 0;
+		return NULL;
+	}
+	int offset = sizeof(int) + 14;
+	iph = (struct iphdr *)((char *)msg+ offset);
 	to->sa.sa_family = AF_INET;
 	to->sin.sin_port = htons(0);
 	to->sin.sin_addr.s_addr = iph->daddr;/*设置目的地址*/
+	guchar buf1[64];
+	adl_sockunion2str(to, buf1, 64);
 	from->sa.sa_family = AF_INET;
 	from->sin.sin_port = htons(0);
 	from->sin.sin_addr.s_addr = iph->saddr;/*设置协议簇*/
-	return len;
+	guchar buf2[64];
+	adl_sockunion2str(from, buf2, 64);
+	event_logiiiii(VVERBOSE, "got a %d bytes packet from ring'%s' at %p, saddr=%s, daddr=%s", 
+				len, recv_ring->name, msg, buf1, buf2);
+	zlog_data((unsigned char *)msg + sizeof(int), len);
+	/*去掉以太网头*/
+	*msg_len = len - 14;
+	return (void*)((char *)msg + offset);
 }
 
-int dispatch_rings()
+int dispatch_rings(void)
 {
 	int length = 0;
 	union sockunion src, dest;
@@ -1459,7 +1477,8 @@ int dispatch_rings()
 			m_ring = adl_recv_ring1;
 		if(rte_ring_count(m_ring) > 0)
 		{
-			length = adl_recvfrom_ring(m_ring, r_rbuf, MAX_MTU_SIZE, &src, &dest);
+			void *m_msg = adl_recv_from_ring(m_ring, &length, &src, &dest);
+			event_logii(VVERBOSE, "dispatch_rings:after rm ether hdr packet len = %d at %p", length, m_msg);
 			if (length < 0)
 				if (length < 0)
 					break;
@@ -1469,7 +1488,12 @@ int dispatch_rings()
 				src_in = (struct sockaddr_in *)&src;
 				event_logi(VERBOSE, "IPv4/SCTP-Message from %s -> activating callback",
 						   inet_ntoa(src_in->sin_addr));
-				iph = (struct iphdr *)r_rbuf;
+				iph = (struct iphdr *)m_msg;
+				if(iph == NULL)
+				{
+					event_log(VVERBOSE, "why get a null iph?");
+					exit(-1);
+				}
 				hlen = iph->ihl << 2;
 				if (length < hlen)
 				{
@@ -1480,7 +1504,8 @@ int dispatch_rings()
 				else
 				{
 					length -= hlen;/*rm iphdr*/
-					mdi_receiveMessageAtRing(m_ring, &r_rbuf[hlen], length, &src, &dest);
+					event_logi(VVERBOSE, "IP hdr len = %d", hlen);
+					mdi_receiveMessageAtRing(m_ring, (unsigned char*)m_msg + hlen, length, &src, &dest);
 				}
 				break;
 			default:
