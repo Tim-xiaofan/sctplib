@@ -411,12 +411,12 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
             rxc_data_chunk_rx((SCTP_data_chunk*) chunk, address_index);
             data_chunk_received = TRUE;
             break;
-        case CHUNK_INIT:/*create association A'*/
-            event_log(INTERNAL_EVENT_0, "*******************  Bundling received INIT chunk");
+        case CHUNK_INIT:/*create TCB A'*/
+            event_logi(INTERNAL_EVENT_0, "*******************  Bundling received INIT chunk at %p", chunk);
             association_state = sctlr_init((SCTP_init *) chunk);
             break;
         case CHUNK_INIT_ACK:
-            event_log(INTERNAL_EVENT_0, "*******************  Bundling received INIT ACK chunk");
+            event_logi(INTERNAL_EVENT_0, "*******************  Bundling received INIT ACK chunk at %p", chunk);
             association_state = sctlr_initAck((SCTP_init *) chunk);
             break;
         case CHUNK_SACK:

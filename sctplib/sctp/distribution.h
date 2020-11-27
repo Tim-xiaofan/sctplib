@@ -212,6 +212,7 @@ unsigned int mdi_associatex(short initID, void *ulp_data);
    of type void.
 */
 
+void *mdi_readSctpControlOfTCBA(void);
 /*
  * returns: pointer to the flow control data structure.
  *          null in case of error.
@@ -319,6 +320,7 @@ unsigned int mdi_readLastInstanceInitiateTag(void);
 */
 int mdi_readLastFromAddress(union sockunion* fromAddress);
 
+int mdi_readLastDestAddress(union sockunion* destAddress);
 /* reads the path from which the last DG was received. -1 is returned if no DG was received.
 */
 short mdi_readLastFromPath(void);

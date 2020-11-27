@@ -95,6 +95,8 @@ typedef struct SCTP_CONTROLDATA
     short initRetransCounter;
     /** pointer to the init chunk data structure (for retransmissions) */
     SCTP_init *initChunk;
+    /** pointer to the init ack chunk data structure (for another) */
+    SCTP_init *initAck;
     /** pointer to the cookie chunk data structure (for retransmissions) */
     SCTP_cookie_echo *cookieChunk;
     /** my tie tag for cross initialization and other sick cases */
@@ -729,16 +731,8 @@ int sctlr_init(SCTP_init * init)
 	if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
 		/* DO_5_1_B_INIT : Normal case, no association exists yet */
 		/* create Master TCB and it's Slave TCB */
-
-		/*gather ip addr in INIT, slave as active peer, must store all ip addr given network cell A
-		 *slave must look like cell B, master must look like cell A */
-        event_log(EXTERNAL_EVENT, "sctlr_init: received INIT chunk in normal");
-		supportedTypes = mdi_getSupportedAddressTypes();
-		nrAddresses = ch_IPaddresses(initCID, supportedTypes, rAddresses, &peerSupportedTypes, &last_source);
-		event_logi(EXTERNAL_EVENT, "there are %d addrs in INIT", nrAddresses);
-		if ((supportedTypes & peerSupportedTypes) == 0)
-		  error_log(ERROR_FATAL, "BAKEOFF: Program error, no common address types in sctlr_init()");
-			/*start an association*/
+		
+		/*start an association, create A' TCB and init it*/
 		if(mdi_associatex(initCID, NULL) == 0)
 		{
 			error_log(ERROR_MAJOR, "associate faile");
@@ -966,7 +960,8 @@ gboolean sctlr_initAck(SCTP_init * initAck)
         error_log(ERROR_MAJOR, "sctlr_initAck: read SCTP-control failed");
         return return_state;
     }
-
+	/*store init ack for TCB B'*/
+	localData->initAck = (SCTP_init *)ch_chunkString(initAckCID);	
     state = localData->association_state;
 	switch (state) {
     case COOKIE_WAIT:
@@ -975,7 +970,11 @@ gboolean sctlr_initAck(SCTP_init * initAck)
         /* Set length of chunk to HBO(host byte order) !! 
 		 * retrieve INIT stored before*/
         initCID = ch_makeChunk((SCTP_simple_chunk *) localData->initChunk);
-
+		printf("sctlr_initAck:INIT traceinitiateTag[%0x], at %p\n", ch_initiateTag(initCID), localData->initChunk);
+		int initAckCID1 = ch_makeChunk((SCTP_simple_chunk *) localData->initAck);
+		printf("sctlr_initAck:INIT ACK traceinitiateTag[%0x], at %p\n", ch_initiateTag(initAckCID1), localData->initAck);
+        ch_chunkString(initAckCID1);
+		ch_forgetChunk(initAckCID1);
         /* FIXME: check also the noPeerOutStreams <= noLocalInStreams */
         if (ch_noOutStreams(initAckCID) == 0 || ch_noInStreams(initAckCID) == 0 || ch_initiateTag(initAckCID) == 0) {/*abort*/
             if (localData->initTimer != 0) {
@@ -998,7 +997,8 @@ gboolean sctlr_initAck(SCTP_init * initAck)
             return return_state;
         }
 
-        result = mdi_readLastInstanceDestAddress(&destAddress);
+		/*addrs in INIT ACK and src addr is association A' dest addr*/
+        result = mdi_readLastInstanceFromAddress(&destAddress);
         if (result != 0) {
             if (localData->initTimer != 0) {
                 sctp_stopTimer(localData->initTimer);
@@ -1038,7 +1038,7 @@ gboolean sctlr_initAck(SCTP_init * initAck)
        event_logii(VERBOSE, "sctlr_InitAck(): called mdi_initAssociation(in-streams=%u, out-streams=%u)",
                     inbound_streams,outbound_streams);
         /* reset length field again to NBO... */
-        ch_chunkString(initCID),
+        ch_chunkString(initCID);
         /* free initChunk memory */
         ch_forgetChunk(initCID);
 
@@ -1078,7 +1078,7 @@ gboolean sctlr_initAck(SCTP_init * initAck)
 		/*do not send cookie back , still at state cookie wait*/
 		state = COOKIE_WAIT;
 		/*B' replay INIT ACK*/
-		bu_put_Ctrl_Chunk(ch_chunkString(initAckCID), NULL);
+		bu_put_Ctrl_Chunk((SCTP_simple_chunk*)initAck, NULL);
 		mdi_setSeletedSendRing(mdi_readAnotherInstanceSendRing());
 		bu_sendAllChunks(NULL);
 		bu_unlock_sender(NULL);
@@ -1171,11 +1171,27 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
         event_log(EXTERNAL_EVENT, "event: invalidCookie received");
         return;
     }
-    initCID    = ch_cookieInitFixed(cookieCID);
-    initAckCID = ch_cookieInitAckFixed(cookieCID);
+	SCTP_controlData *TCBA_sctpControl = (SCTP_controlData *)mdi_readSctpControlOfTCBA();
+	if(TCBA_sctpControl == NULL)
+	{
+        event_log(EXTERNAL_EVENT, "event: cannot get TCBA_sctpControl");
+        return;
+	}
+	else if(TCBA_sctpControl->initChunk == NULL ||
+				TCBA_sctpControl->initAck == NULL)
+	{
+		event_logii(EXTERNAL_EVENT, 
+					"sctlr_cookie_echo: two few info in TCBA_sctpControl initChunk[%p], initAck[%p]",
+					TCBA_sctpControl->initChunk, TCBA_sctpControl->initAck);
+		return;
+	}
+    initCID    = ch_makeChunk((SCTP_simple_chunk *)TCBA_sctpControl->initChunk);
+    initAckCID = ch_makeChunk((SCTP_simple_chunk *)TCBA_sctpControl->initAck);
 
     cookie_remote_tag = ch_initiateTag(initCID);
     cookie_local_tag  = ch_initiateTag(initAckCID);
+	event_logii(EXTERNAL_EVENT, "cookieLocalTag[%0x], cookieRemoteTag[%0x]", 
+					cookie_local_tag, cookie_remote_tag);
 
     /* these two will be zero, if association is not up yet */
     local_tag  = mdi_readLocalTag();
@@ -2246,6 +2262,10 @@ void sci_associate(unsigned short noOfOutStreams,
         
 		/*store INIT for retransmission later*/
         localData->initChunk = (SCTP_init *) ch_chunkString(initCID);
+		short initCID1 = ch_makeChunk((SCTP_simple_chunk *)localData->initChunk);
+		printf("sci_associate:INIT traceinitiateTag[%0x], at %p\n", ch_initiateTag(initCID1), localData->initChunk);
+		ch_chunkString(initCID1);
+		ch_forgetChunk(initCID1);
 		if(localData->initChunk == NULL)
 		{
 			error_log(ERROR_FATAL, "cannot keep INIT for retransmission");
