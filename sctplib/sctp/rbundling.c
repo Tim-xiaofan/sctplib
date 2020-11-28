@@ -48,7 +48,7 @@
 #include "errorhandler.h"
 #include "streamengine.h"
 #include "distribution.h"
-
+#include "adaptation.h"
 #include <stdio.h>
 
 #define TOTAL_SIZE(buf)		((buf)->ctrl_position+(buf)->sack_position+(buf)->data_position- 2*sizeof(SCTP_common_header))
@@ -359,6 +359,7 @@ gboolean rbu_scanDatagramForError(guchar * datagram, guint len, gushort error_ca
  * @param  address_index  index of address on which this data arrived
  * @param  datagram     pointer to first chunk of the newly received data
  * @param  len          length of payload (i.e. len of the concatenation of chunks)
+ * @param  offset       offset in a dpdk mempool obj
  */
 gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
 {
@@ -372,6 +373,8 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
        - CHUNK_ERROR probably to SCTP_CONTROL as well  (at least there !)
        - CHUNK_DATA goes to RX_CONTROL
      */
+	event_logiiii(VVERBOSE, "rbu_rcvDatagram: got several chunks totalLen[%d],start[%p],ether_start[%p],[%d]",
+				len, datagram, adl_get_ether_beginning(), 0);
     guchar *current_position;
     gushort processed_len = 0, chunk_len;/*已处理长度*/
     gushort pad_bytes;
@@ -382,14 +385,13 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
     gboolean send_it = FALSE;
 
     bu_lock_sender();
-
     current_position = datagram; /* points to the first chunk in this pdu */
     event_log(INTERNAL_EVENT_0, "Entered rbu_rcvDatagram()...... ");
     /* CHECKME : beim Empfangen leerer Chunks tritt im Bundling eine Endlosschleife auf ??? */
     while (processed_len < len) {
 
         chunk = (SCTP_simple_chunk *) current_position;
-        chunk_len = CHUNKP_LENGTH((SCTP_chunk_header *) chunk);
+        chunk_len = CHUNKP_LENGTH((SCTP_chunk_header *) chunk);/*length of current chunk*/
         event_logiiii(INTERNAL_EVENT_0,
                      "rbu_rcvDatagram(address=%u) : len==%u, processed_len = %u, chunk_len=%u",
                      address_index, len, processed_len, chunk_len);

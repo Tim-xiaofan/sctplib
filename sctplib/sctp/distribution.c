@@ -1246,12 +1246,13 @@ void mdi_receiveMessage(gint socket_fd, unsigned char *buffer,
  *  @param portnum            bogus port number
  */
 
-void mdi_receiveMessageAtRing(struct rte_ring *recv_ring,  unsigned char *buffer,
-                   int bufferLength, union sockunion * source_addr,
-                   union sockunion * dest_addr)
+void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
+                   int bufferLength, union sockunion *source_addr,
+                   union sockunion *dest_addr)
 {/*start mdi*/
 	//zlog_data(buffer, bufferLength);
-	event_logii(VVERBOSE, "mdi_receiveMessageAtRing:after rm IP hdr packet len = %d at %p", bufferLength, buffer);
+	event_logiiii(VVERBOSE, "mdi_receiveMessageAtRing:got a sctp packet from ring[%s],len[%d],start[%p],ether_start[%p]",
+				recv_ring->name, bufferLength, buffer, adl_get_ether_beginning());
 	SCTP_message *message;
     SCTP_init_fixed *initChunk = NULL;
     guchar* initPtr = NULL;
@@ -5831,9 +5832,6 @@ mdi_newAssociation(void*  sInstance,
                    union sockunion *destinationAddressList)
 {
     SCTP_instance*  instance = NULL;
-    unsigned int ii;
-    int result;
-
     if (sInstance == NULL) {
         if (sctpInstance == NULL) {/*无SCTP Instance*/
             error_logi(ERROR_FATAL, "SCTP Instance for Port %u were all NULL, call sctp_registerInstance FIRST !",local_port);
@@ -5844,10 +5842,14 @@ mdi_newAssociation(void*  sInstance,
     } else {
         instance = (SCTP_instance*)sInstance;
     }
-
+	if(sctpInstance -> anotherInstance == NULL)
+	{
+		error_logi(ERROR_FATAL, "SCTP instance named[%u] does't have anotherInstance", sctpInstance->sctpInstanceName);
+		return 1;
+	}
     if (!instance) error_log(ERROR_MAJOR, "instance is NULL ! Segfault !");
 
-    event_logiiiii(VERBOSE," mdi_newAssociation: Instance: %u, local port %u, rem.port: %u, local tag: %u, primary: %d",
+    event_logiiiii(VERBOSE," mdi_newAssociation: Instance: %u, local port %u, rem.port: %u, local tag: %0x, primary: %d",
            instance->sctpInstanceName, local_port,  remote_port, tagLocal, primaryDestinitionAddress);
 
 
@@ -5884,57 +5886,22 @@ mdi_newAssociation(void*  sInstance,
     currentAssociation->ulp_dataptr = NULL;
     currentAssociation->ipTos = instance->default_ipTos;
     currentAssociation->maxSendQueue = instance->default_maxSendQueue;
+            /* get all specified addresses */
+    currentAssociation->noOfLocalAddresses = instance->noOfLocalAddresses;
+    currentAssociation->localAddresses =
+        (union sockunion *) malloc(instance->noOfLocalAddresses * sizeof(union sockunion));
+    memcpy(currentAssociation->localAddresses, instance->localAddressList,
+            instance->noOfLocalAddresses * sizeof(union sockunion));
 
-    result = mdi_updateMyAddressList();
-    if (result != SCTP_SUCCESS) {
-        error_log(ERROR_MAJOR, "Could not update my address list. Unable to initiate new association.");
-        return 1;
-    }
 
-    if (instance->has_IN6ADDR_ANY_set) {
-        /* get ALL addresses */
-        currentAssociation->noOfLocalAddresses =  myNumberOfAddresses;
-        currentAssociation->localAddresses =
-            (union sockunion *) calloc(myNumberOfAddresses, sizeof(union sockunion));
-        memcpy(currentAssociation->localAddresses, myAddressList,
-                myNumberOfAddresses* sizeof(union sockunion));
-        event_logi(VERBOSE," mdi_newAssociation: Assoc has has_IN6ADDR_ANY_set, and %d addresses",myNumberOfAddresses);
-    } else if (instance->has_INADDR_ANY_set) {
-        /* get all IPv4 addresses */
-        currentAssociation->noOfLocalAddresses = 0;
-        for (ii = 0; ii <  myNumberOfAddresses; ii++) {
-            if (sockunion_family(&(myAddressList[ii])) == AF_INET) {
-                currentAssociation->noOfLocalAddresses++;
-            }
-        }
-        currentAssociation->localAddresses =
-            (union sockunion *) calloc(currentAssociation->noOfLocalAddresses, sizeof(union sockunion));
-        currentAssociation->noOfLocalAddresses = 0;
-        for (ii = 0; ii <  myNumberOfAddresses; ii++) {
-            if (sockunion_family(&(myAddressList[ii])) == AF_INET) {
-                memcpy(&(currentAssociation->localAddresses[currentAssociation->noOfLocalAddresses]),
-                       &(myAddressList[ii]),sizeof(union sockunion));
-                currentAssociation->noOfLocalAddresses++;
-            }
-        }
-        event_logi(VERBOSE," mdi_newAssociation: Assoc has has_INADDR_ANY_set, and %d addresses",currentAssociation->noOfLocalAddresses);
-    } else {        /* get all specified addresses */
-        currentAssociation->noOfLocalAddresses = instance->noOfLocalAddresses;
-        currentAssociation->localAddresses =
-            (union sockunion *) malloc(instance->noOfLocalAddresses * sizeof(union sockunion));
-        memcpy(currentAssociation->localAddresses, instance->localAddressList,
-               instance->noOfLocalAddresses * sizeof(union sockunion));
+    currentAssociation->had_IN6ADDR_ANY_set = FALSE;
+    currentAssociation->had_INADDR_ANY_set = FALSE;
 
-    }
-
-    currentAssociation->had_IN6ADDR_ANY_set = instance->has_IN6ADDR_ANY_set;
-    currentAssociation->had_INADDR_ANY_set = instance->has_INADDR_ANY_set;
-
-    currentAssociation->noOfNetworks = noOfDestinationAddresses;
+    currentAssociation->noOfNetworks = instance->anotherInstance->noOfLocalAddresses;
     currentAssociation->destinationAddresses = /*array to store peer's addr*/
-        (union sockunion *) malloc(noOfDestinationAddresses * sizeof(union sockunion));
-    memcpy(currentAssociation->destinationAddresses, destinationAddressList,
-         noOfDestinationAddresses * sizeof(union sockunion));
+        (union sockunion *) malloc(instance->anotherInstance->noOfLocalAddresses * sizeof(union sockunion));
+    memcpy(currentAssociation->destinationAddresses, instance->anotherInstance->localAddressList,
+         instance->anotherInstance->noOfLocalAddresses * sizeof(union sockunion));
 
     /* check if newly created association already exists. */
     if (checkForExistingAssociations(currentAssociation) == 1) {
@@ -5967,11 +5934,11 @@ mdi_newAssociation(void*  sInstance,
     currentAssociation->peerSupportsADDIP = FALSE;
 
 
-    event_logii(INTERNAL_EVENT_1, "new Association created ID=%08x, local tag=%08x",
+    event_logii(INTERNAL_EVENT_1, "new Association created ID=%u, local tag=%0x",
         currentAssociation->assocId, currentAssociation->tagLocal);
 
     /* Enter association into list */
-    event_logi(INTERNAL_EVENT_0, "entering association %08x into list", currentAssociation->assocId);
+    event_logi(INTERNAL_EVENT_0, "entering association %u into list", currentAssociation->assocId);
 
     AssociationList = g_list_insert_sorted(AssociationList, currentAssociation, &compareAssociationIDs);
 	mdi_displayAssociationList(AssociationList);

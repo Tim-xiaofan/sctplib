@@ -94,6 +94,7 @@ int adl_setReceiveBufferSize(int sfd, int new_size);
 
 /*获取adpter layer的sctp socket fd*/
 gint adl_get_sctpv4_socket(void);
+void *adl_get_ether_beginning(void);
 void adl_get_sctp_rings(struct rte_ring* rr, struct rte_ring* rr1, struct rte_ring* sr, struct rte_ring* sr1, struct rte_mempool *mp);
 #ifdef HAVE_IPV6
 gint adl_get_sctpv6_socket(void);

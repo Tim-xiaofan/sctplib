@@ -71,7 +71,7 @@
 
 
 static unsigned short      writeCursor[MAX_CHUNKS];
-static SCTP_simple_chunk*  chunks[MAX_CHUNKS];
+static SCTP_simple_chunk_wrapper   *chunks[MAX_CHUNKS];
 static boolean             chunkCompleted[MAX_CHUNKS];
 
 static ChunkID freeChunkID = 0;
@@ -80,6 +80,17 @@ void ch_addUnrecognizedParameter(unsigned char* pos, ChunkID cid,
                                  unsigned short length, unsigned char* data);
 
 /******************************* internal functions ***********************************************/
+
+static boolean
+isValidChunk(ChunkID chunkID)
+{
+	if(chunks[chunkID] == NULL || 
+				chunks[chunkID]->simpleChunk == NULL ||
+				chunks[chunkID]->ether_start == NULL)
+        return FALSE;
+	else 
+		return TRUE;
+}
 /*
  * computes a cookie signature.
  * TODO: replace this by something safer than MD5
@@ -427,7 +438,8 @@ static void enterChunk(SCTP_simple_chunk * chunk, const char *log_text)
     cid = freeChunkID;
     event_logi(INTERNAL_EVENT_0, log_text, cid);
 
-    chunks[freeChunkID] = chunk;
+    chunks[freeChunkID]->simpleChunk = chunk;
+	chunks[freeChunkID]->ether_start = adl_get_ether_beginning();
     writeCursor[freeChunkID] = 0;
     chunkCompleted[freeChunkID] = FALSE;
 }
@@ -508,7 +520,7 @@ ch_enterSupportedAddressTypes(ChunkID chunkID,
     guint16 num_of_types = 0, position = 0;
     guint16 total_length = 0;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
     }
 
@@ -517,14 +529,14 @@ ch_enterSupportedAddressTypes(ChunkID chunkID,
         return;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
         if (with_ipv4) num_of_types++ ;
         if (with_ipv6) num_of_types++;
         if (with_dns)  num_of_types++;
 
         /* append the new parameter */
         param = (SCTP_supported_addresstypes *) & ((SCTP_init *)
-                                     chunks[chunkID])->variableParams[writeCursor[chunkID]];
+                                     chunks[chunkID]->simpleChunk)->variableParams[writeCursor[chunkID]];
         /* _might_ be overflow here, at some time... */
         if (num_of_types == 0)
             error_log(ERROR_FATAL, " No Supported Address Types -- Program Error");
@@ -570,9 +582,9 @@ void ch_enterCookiePreservative(ChunkID chunkID, unsigned int lifespanIncrement)
     gint32 vl_param_curs;
     guint16 vl_param_total_length;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
-
+		return;
     }
 
     if (chunkCompleted[chunkID]) {
@@ -580,25 +592,25 @@ void ch_enterCookiePreservative(ChunkID chunkID, unsigned int lifespanIncrement)
         return;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
         /* check if init chunk already contains a cookie preserv. */
         vl_param_total_length =
-            ((SCTP_init *) chunks[chunkID])->chunk_header.chunk_length -
+            ((SCTP_init *) chunks[chunkID]->simpleChunk)->chunk_header.chunk_length -
             sizeof(SCTP_chunk_header) - sizeof(SCTP_init_fixed);
 
         vl_param_curs = retrieveVLParamFromString(VLPARAM_COOKIE_PRESERV, &((SCTP_init *)
                                                                             chunks
-                                                                            [chunkID])->
+                                                                            [chunkID]->simpleChunk)->
                                                   variableParams[0], vl_param_total_length);
         if (vl_param_curs >= 0) {
             /* simply overwrite this cookie preserv. */
             preserv = (SCTP_cookie_preservative *) & ((SCTP_init *)
-                                                      chunks[chunkID])->variableParams
+                                                      chunks[chunkID]->simpleChunk)->variableParams
                 [vl_param_curs];
         } else {
             /* append the new parameter */
             preserv = (SCTP_cookie_preservative *) & ((SCTP_init *)
-                                 chunks[chunkID])->variableParams[writeCursor[chunkID]];
+                                 chunks[chunkID]->simpleChunk)->variableParams[writeCursor[chunkID]];
             /* _might_ be overflow here, at some time... */
             writeCursor[chunkID] += sizeof(SCTP_cookie_preservative);
         }
@@ -624,7 +636,7 @@ int ch_enterIPaddresses(ChunkID chunkID, union sockunion sock_addresses[], int n
     int i,length;
     SCTP_ip_address *address;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return -1;
     }
@@ -636,12 +648,12 @@ int ch_enterIPaddresses(ChunkID chunkID, union sockunion sock_addresses[], int n
 
     length = 0;
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT_ACK ||
-        chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK ||
+        chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
 
-        mstring = &((SCTP_init *) chunks[chunkID])->variableParams[writeCursor[chunkID]];
+        mstring = &((SCTP_init *) chunks[chunkID]->simpleChunk)->variableParams[writeCursor[chunkID]];
     } else {
-        mstring = &((SCTP_asconf*)chunks[chunkID])->variableParams[writeCursor[chunkID]];
+        mstring = &((SCTP_asconf*)chunks[chunkID]->simpleChunk)->variableParams[writeCursor[chunkID]];
     }
 
     for (i = 0; i < noOfAddresses; i++) {
@@ -691,16 +703,16 @@ gboolean ch_getPRSCTPfromCookie(ChunkID cookieCID)
     guint16 vlp_totalLength;
     unsigned char* the_string=NULL;
 
-   if (chunks[cookieCID] == NULL) {
+   if (!isValidChunk(cookieCID)) {
         error_log(ERROR_FATAL, "Invalid Cookie chunk ID");
         return FALSE;
     }
     vlp_totalLength =
-            ((SCTP_cookie_echo *) chunks[cookieCID])->chunk_header.chunk_length -
+            ((SCTP_cookie_echo *) chunks[cookieCID]->simpleChunk)->chunk_header.chunk_length -
             COOKIE_FIXED_LENGTH - sizeof(SCTP_chunk_header);
 
     curs = 0;
-    the_string =  &((SCTP_cookie_echo *)chunks[cookieCID])->vlparams[0];
+    the_string =  &((SCTP_cookie_echo *)chunks[cookieCID]->simpleChunk)->vlparams[0];
 
     while (curs < vlp_totalLength) {
         vl_Ptr = (SCTP_vlparam_header *) & the_string[curs];
@@ -737,17 +749,17 @@ gboolean ch_getPRSCTPfromInitAck(ChunkID initAckCID)
     guint16 vlp_totalLength;
     unsigned char* ack_string;
 
-   if (chunks[initAckCID] == NULL) {
+   if (!isValidChunk(initAckCID)) {
         error_log(ERROR_FATAL, "Invalid initAck chunk ID");
         return -1;
     }
-    vlp_totalLength = ((SCTP_init *)chunks[initAckCID])->chunk_header.chunk_length -
+    vlp_totalLength = ((SCTP_init *)chunks[initAckCID]->simpleChunk)->chunk_header.chunk_length -
                         sizeof(SCTP_chunk_header) - sizeof(SCTP_init_fixed);
 
     event_logi(VERBOSE, "Scan initAckChunk for PRSCTP parameter: len %u", vlp_totalLength);
 
     curs = 0;
-    ack_string =  &((SCTP_init *)chunks[initAckCID])->variableParams[0];
+    ack_string =  &((SCTP_init *)chunks[initAckCID]->simpleChunk)->variableParams[0];
 
     while (curs < vlp_totalLength) {
         vl_Ptr = (SCTP_vlparam_header *) & ack_string[curs];
@@ -781,20 +793,20 @@ int ch_enterPRSCTPfromInit(ChunkID initAckCID, ChunkID initCID)
     unsigned char* init_string;
     unsigned char* ack_string;
 
-   if (chunks[initCID] == NULL || chunks[initAckCID] == NULL) {
+   if (!isValidChunk(initCID) || !isValidChunk(initAckCID)) {
         error_log(ERROR_FATAL, "Invalid init or initAck chunk ID");
         return -1;
     }
-    vlp_totalLength = ((SCTP_init *)chunks[initCID])->chunk_header.chunk_length -
+    vlp_totalLength = ((SCTP_init *)chunks[initCID]->simpleChunk)->chunk_header.chunk_length -
                         sizeof(SCTP_chunk_header) - sizeof(SCTP_init_fixed);
 
     event_logi(VERBOSE, "Scan initChunk for PRSCTP parameter: len %u", vlp_totalLength);
 
     curs = 0;
-    init_string =  &((SCTP_init *)chunks[initCID])->variableParams[0];
+    init_string =  &((SCTP_init *)chunks[initCID]->simpleChunk)->variableParams[0];
 
     while (curs < vlp_totalLength) {
-        ack_string =  &((SCTP_init *)chunks[initAckCID])->variableParams[writeCursor[initAckCID]];
+        ack_string =  &((SCTP_init *)chunks[initAckCID]->simpleChunk)->variableParams[writeCursor[initAckCID]];
         vl_initPtr = (SCTP_vlparam_header *) & init_string[curs];
         pType =  ntohs(vl_initPtr->param_type);
         pLen  =  ntohs(vl_initPtr->param_length);
@@ -852,12 +864,12 @@ ch_enterCookieVLP(ChunkID initCID, ChunkID initAckID,
     guint16 no_local_ipv6_addresses = 0;
     guint16 no_remote_ipv6_addresses = 0;
 
-    if (chunks[initAckID] == NULL) {
-        error_log(ERROR_MAJOR, "Invalid chunk ID");
+    if (!isValidChunk(initAckID)) {
+        error_log(ERROR_MAJOR, "Invalid initAck ID");
         return -1;
     }
 
-    if (chunks[initAckID]->chunk_header.chunk_id == CHUNK_INIT_ACK) {
+    if (chunks[initAckID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK) {
         if (chunkCompleted[initAckID]) {
             error_log(ERROR_MAJOR, "ch_enterCookieVLP: chunk already completed");
             return -1;
@@ -865,7 +877,7 @@ ch_enterCookieVLP(ChunkID initCID, ChunkID initAckID,
 
         /* enter fixed length params into cookie (which is variable part of initAck) */
         cookie = (SCTP_cookie_param *)
-            & ((SCTP_init *) chunks[initAckID])->variableParams[writeCursor[initAckID]];
+            & ((SCTP_init *) chunks[initAckID]->simpleChunk)->variableParams[writeCursor[initAckID]];
         cookie->vlparam_header.param_type = htons(VLPARAM_COOKIE);
 
         /* these contain the CURRENT tags ! */
@@ -985,11 +997,11 @@ int ch_enterUnrecognizedParameters(ChunkID initCID, ChunkID AckCID, unsigned int
     unsigned char* init_string;
     unsigned char* ack_string;
 
-    if (chunks[initCID] == NULL) {
+    if (!isValidChunk(initCID)) {
         error_log(ERROR_FATAL, "Invalid init chunk ID");
         return -1;
     }
-    if (chunks[AckCID] == NULL) {
+    if (!isValidChunk(AckCID)) {
         error_log(ERROR_FATAL, "Invalid init ack chunk ID");
         return -1;
     }
@@ -1005,18 +1017,18 @@ int ch_enterUnrecognizedParameters(ChunkID initCID, ChunkID AckCID, unsigned int
     else
         with_ipv6 = TRUE;
 
-    vlp_totalLength = ((SCTP_init *)chunks[initCID])->chunk_header.chunk_length -
+    vlp_totalLength = ((SCTP_init *)chunks[initCID]->simpleChunk)->chunk_header.chunk_length -
                     sizeof(SCTP_chunk_header) - sizeof(SCTP_init_fixed);
 
     event_logiii(VERBOSE, "Scan initk for Errors -- supported types = %u, IPv4: %s, IPv6: %s",
             supportedAddressTypes, (with_ipv4 == TRUE)?"TRUE":"FALSE", (with_ipv6 == TRUE)?"TRUE":"FALSE");
 
     curs = 0;
-    init_string =  &((SCTP_init *)chunks[initCID])->variableParams[0];
+    init_string =  &((SCTP_init *)chunks[initCID]->simpleChunk)->variableParams[0];
 
     while (curs < vlp_totalLength) {
 
-        ack_string =  &((SCTP_init *)chunks[AckCID])->variableParams[writeCursor[AckCID]];
+        ack_string =  &((SCTP_init *)chunks[AckCID]->simpleChunk)->variableParams[writeCursor[AckCID]];
         vl_initPtr = (SCTP_vlparam_header *) & init_string[curs];
         pType = ntohs(vl_initPtr->param_type);
         pLen  = ntohs(vl_initPtr->param_length);
@@ -1091,7 +1103,7 @@ int ch_enterUnrecognizedErrors(ChunkID initAckID,
     *peerSupportsIPV4 = TRUE;
     *peerSupportsIPV6 = TRUE;
 
-    if (chunks[initAckID] == NULL) {
+    if (!isValidChunk(initAckID)) {
         error_log(ERROR_FATAL, "Invalid init ack chunk ID");
     }
     if (errorchunk == NULL) {
@@ -1113,11 +1125,11 @@ int ch_enterUnrecognizedErrors(ChunkID initAckID,
     event_logiii(VERBOSE, "Scan initAck for Errors supported types = %u, IPv4: %s, IPv6: %s",
             supportedTypes, (with_ipv4 == TRUE)?"TRUE":"FALSE", (with_ipv6 == TRUE)?"TRUE":"FALSE");
 
-    vlp_totalLength = ((SCTP_init *)chunks[initAckID])->chunk_header.chunk_length -
+    vlp_totalLength = ((SCTP_init *)chunks[initAckID]->simpleChunk)->chunk_header.chunk_length -
                     sizeof(SCTP_chunk_header) - sizeof(SCTP_init_fixed);
 
     curs = 0;
-    ack_string =  &((SCTP_init *)chunks[initAckID])->variableParams[0];
+    ack_string =  &((SCTP_init *)chunks[initAckID]->simpleChunk)->variableParams[0];
 
     while (curs < vlp_totalLength) {
         vl_ackPtr = (SCTP_vlparam_header *) & ack_string[curs];
@@ -1288,15 +1300,15 @@ int ch_enterUnrecognizedErrors(ChunkID initAckID,
 /* ch_initiateTag reads the initiate tag from an init or initAck */
 unsigned int ch_initiateTag(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
 
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT_ACK ||
-        chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
-        return ntohl(((SCTP_init *) chunks[chunkID])->init_fixed.init_tag);
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK ||
+        chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
+        return ntohl(((SCTP_init *) chunks[chunkID]->simpleChunk)->init_fixed.init_tag);
     } else {
         error_log(ERROR_MAJOR, "ch_initiateTag: chunk type not init or initAck");
         return 0;
@@ -1309,14 +1321,14 @@ unsigned int ch_initiateTag(ChunkID chunkID)
 /* ch_receiverWindow reads the remote receiver window from an init or initAck */
 unsigned int ch_receiverWindow(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT_ACK ||
-        chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
-        return ntohl(((SCTP_init *) chunks[chunkID])->init_fixed.rwnd);
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK ||
+        chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
+        return ntohl(((SCTP_init *) chunks[chunkID]->simpleChunk)->init_fixed.rwnd);
     } else {
         error_log(ERROR_MAJOR, "ch_receiverWindow: chunk type not init or initAck");
         return 0;
@@ -1328,14 +1340,14 @@ unsigned int ch_receiverWindow(ChunkID chunkID)
 /* ch_initialTSN reads the initial TSN from an init or initAck */
 unsigned int ch_initialTSN(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT_ACK ||
-        chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
-        return ntohl(((SCTP_init *) chunks[chunkID])->init_fixed.initial_tsn);
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK ||
+        chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
+        return ntohl(((SCTP_init *) chunks[chunkID]->simpleChunk)->init_fixed.initial_tsn);
     } else {
         error_log(ERROR_MAJOR, "ch_initialTSN: chunk type not init or initAck");
         return 0;
@@ -1347,14 +1359,14 @@ unsigned int ch_initialTSN(ChunkID chunkID)
 /* ch_noOutStreams reads the number of output streams from an init or initAck */
 unsigned short ch_noOutStreams(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT_ACK ||
-        chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
-        return ntohs(((SCTP_init *) chunks[chunkID])->init_fixed.outbound_streams);
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK ||
+        chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
+        return ntohs(((SCTP_init *) chunks[chunkID]->simpleChunk)->init_fixed.outbound_streams);
     } else {
         error_log(ERROR_MAJOR, "ch_noOutStreams: chunk type not init or initAck");
         return 0;
@@ -1366,14 +1378,14 @@ unsigned short ch_noOutStreams(ChunkID chunkID)
 /* ch_noInStreams reads the number of input streams from an init or initAck */
 unsigned short ch_noInStreams(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT_ACK ||
-        chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
-        return ntohs(((SCTP_init *) chunks[chunkID])->init_fixed.inbound_streams);
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK ||
+        chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
+        return ntohs(((SCTP_init *) chunks[chunkID]->simpleChunk)->init_fixed.inbound_streams);
     } else {
         error_log(ERROR_MAJOR, "ch_noInStreams: chunk type not init or initAck");
         return 0;
@@ -1392,25 +1404,24 @@ unsigned int ch_cookieLifeTime(ChunkID chunkID)
     SCTP_cookie_preservative *preserv;
 
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
 
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
         vl_param_total_length =
-            ((SCTP_init *) chunks[chunkID])->chunk_header.chunk_length -
+            ((SCTP_init *) chunks[chunkID]->simpleChunk)->chunk_header.chunk_length -
             sizeof(SCTP_chunk_header) - sizeof(SCTP_init_fixed);
 
         vl_param_curs = retrieveVLParamFromString(VLPARAM_COOKIE_PRESERV, &((SCTP_init *)
-                                                                            chunks
-                                                                            [chunkID])->
-                                                  variableParams[0], vl_param_total_length);
+                                                                            chunks[chunkID]->simpleChunk)->variableParams[0], 
+												  vl_param_total_length);
         if (vl_param_curs >= 0) {
             /* found cookie preservative */
             preserv = (SCTP_cookie_preservative *) & ((SCTP_init *)
-                                                      chunks[chunkID])->variableParams[vl_param_curs];
+                                                      chunks[chunkID]->simpleChunk)->variableParams[vl_param_curs];
             return (ntohl(preserv->cookieLifetimeInc) + sci_getCookieLifeTime());
         } else {
             return sci_getCookieLifeTime();
@@ -1433,24 +1444,24 @@ unsigned int ch_getSupportedAddressTypes(ChunkID chunkID)
 
     guint32 result=0;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if ((chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) ||
-        (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT_ACK)) {
+    if ((chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) ||
+        (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK)) {
         vl_param_total_length =
-            ((SCTP_init *) chunks[chunkID])->chunk_header.chunk_length -
+            ((SCTP_init *) chunks[chunkID]->simpleChunk)->chunk_header.chunk_length -
             sizeof(SCTP_chunk_header) - sizeof(SCTP_init_fixed);
 
         vl_param_curs = retrieveVLParamFromString(VLPARAM_SUPPORTED_ADDR_TYPES, &((SCTP_init *)
-                                                  chunks[chunkID])->variableParams[0], vl_param_total_length);
+                                                  chunks[chunkID]->simpleChunk)->variableParams[0], vl_param_total_length);
 
         if (vl_param_curs >= 0) {
             /* found supported address types parameter */
             param = (SCTP_supported_addresstypes*)
-                        &((SCTP_init *)chunks[chunkID])->variableParams[vl_param_curs];
+                        &((SCTP_init *)chunks[chunkID]->simpleChunk)->variableParams[vl_param_curs];
 
             pLen = ntohs(param->vlparam_header.param_length);
 
@@ -1488,23 +1499,23 @@ int ch_IPaddresses(ChunkID chunkID, unsigned int mySupportedTypes, union sockuni
 
     short vl_param_total_length;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT_ACK ||
-        chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK ||
+        chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
         vl_param_total_length =
-            ((SCTP_init *) chunks[chunkID])->chunk_header.chunk_length -
+            ((SCTP_init *) chunks[chunkID]->simpleChunk)->chunk_header.chunk_length -
             sizeof(SCTP_chunk_header) - sizeof(SCTP_init_fixed);
 
         /* retrieve addresses from initAck's option/variable parameter*/
-        noOfAddresses = setIPAddresses(&((SCTP_init *)chunks[chunkID])->variableParams[0],
+        noOfAddresses = setIPAddresses(&((SCTP_init *)chunks[chunkID]->simpleChunk)->variableParams[0],
                                                       vl_param_total_length, addresses, supportedTypes,
                                                       mySupportedTypes, lastSource, TRUE, FALSE);
         event_logii(VERBOSE, "Found %d addresses in %s chunk !", noOfAddresses,
-                    ((chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) ? "INIT" : "INIT ACK"));
+                    ((chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) ? "INIT" : "INIT ACK"));
 
         return noOfAddresses;
     } else {
@@ -1523,22 +1534,22 @@ SCTP_cookie_param *ch_cookieParam(ChunkID chunkID)
     short vl_param_curs;
     short vl_param_total_length;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return NULL;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT_ACK) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK) {
         vl_param_total_length =
-            ((SCTP_init *) chunks[chunkID])->chunk_header.chunk_length -
+            ((SCTP_init *) chunks[chunkID]->simpleChunk)->chunk_header.chunk_length -
             sizeof(SCTP_chunk_header) - sizeof(SCTP_init_fixed);
 
         vl_param_curs = retrieveVLParamFromString(VLPARAM_COOKIE,
-                                                  &((SCTP_init *)chunks[chunkID])->variableParams[0],
+                                                  &((SCTP_init *)chunks[chunkID]->simpleChunk)->variableParams[0],
                                                   vl_param_total_length);
         if (vl_param_curs >= 0) {
             /* found cookie */
-            return (SCTP_cookie_param *) & ((SCTP_init *)chunks[chunkID])->variableParams[vl_param_curs];
+            return (SCTP_cookie_param *) & ((SCTP_init *)chunks[chunkID]->simpleChunk)->variableParams[vl_param_curs];
         } else {
             /* ignore initAck message, init timer will abort */
             error_log(ERROR_MAJOR, "initAck without cookie received, message discarded");
@@ -1555,13 +1566,13 @@ SCTP_cookie_param *ch_cookieParam(ChunkID chunkID)
 /* ch_initFixed reads the fixed part of an init or initAck as complete structure */
 SCTP_init_fixed *ch_initFixed(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return NULL;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT_ACK ||
-        chunks[chunkID]->chunk_header.chunk_id == CHUNK_INIT) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT_ACK ||
+        chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_INIT) {
         return &((SCTP_init *) chunks[chunkID])->init_fixed;
     } else {
         error_log(ERROR_MAJOR, "ch_noInStreams: chunk type not init or initAck");
@@ -1622,7 +1633,7 @@ ChunkID ch_cookieInitFixed(ChunkID chunkID)
 {
     SCTP_init *initChunk;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
@@ -1638,7 +1649,7 @@ ChunkID ch_cookieInitFixed(ChunkID chunkID)
     initChunk->chunk_header.chunk_id = CHUNK_INIT;
     initChunk->chunk_header.chunk_flags = 0x00;
     initChunk->chunk_header.chunk_length = sizeof(SCTP_chunk_header) + sizeof(SCTP_init_fixed);
-    initChunk->init_fixed = ((SCTP_cookie_echo *) chunks[chunkID])->cookie.a_side_init;
+    initChunk->init_fixed = ((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.a_side_init;
 
     enterChunk((SCTP_simple_chunk *) initChunk, "created initChunk from cookie %u ");
 
@@ -1653,7 +1664,7 @@ ChunkID ch_cookieInitAckFixed(ChunkID chunkID)
 {
     SCTP_init *initAckChunk;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
@@ -1669,7 +1680,7 @@ ChunkID ch_cookieInitAckFixed(ChunkID chunkID)
     initAckChunk->chunk_header.chunk_id = CHUNK_INIT_ACK;
     initAckChunk->chunk_header.chunk_flags = 0x00;
     initAckChunk->chunk_header.chunk_length = sizeof(SCTP_chunk_header) + sizeof(SCTP_init_fixed);
-    initAckChunk->init_fixed = ((SCTP_cookie_echo *) chunks[chunkID])->cookie.z_side_initAck;
+    initAckChunk->init_fixed = ((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.z_side_initAck;
 
     enterChunk((SCTP_simple_chunk *) initAckChunk, "created initAckChunk %u  from cookie");
 
@@ -1691,23 +1702,23 @@ int ch_cookieIPDestAddresses(ChunkID chunkID, unsigned int mySupportedTypes,
 
     union sockunion temp_addresses[MAX_NUM_ADDRESSES];
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
         no_loc_ipv4_addresses =
-            ntohs(((SCTP_cookie_echo *) chunks[chunkID])->cookie.no_local_ipv4_addresses);
+            ntohs(((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.no_local_ipv4_addresses);
         no_remote_ipv4_addresses =
-            ntohs(((SCTP_cookie_echo *) chunks[chunkID])->cookie.no_remote_ipv4_addresses);
+            ntohs(((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.no_remote_ipv4_addresses);
         no_loc_ipv6_addresses =
-            ntohs(((SCTP_cookie_echo *) chunks[chunkID])->cookie.no_local_ipv6_addresses);
+            ntohs(((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.no_local_ipv6_addresses);
         no_remote_ipv6_addresses =
-            ntohs(((SCTP_cookie_echo *) chunks[chunkID])->cookie.no_remote_ipv6_addresses);
+            ntohs(((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.no_remote_ipv6_addresses);
 
         vl_param_total_length =
-            ((SCTP_cookie_echo *) chunks[chunkID])->chunk_header.chunk_length -
+            ((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->chunk_header.chunk_length -
             COOKIE_FIXED_LENGTH - sizeof(SCTP_chunk_header);
 
         event_logi(VVERBOSE, " Computed total length of vparams : %d", vl_param_total_length);
@@ -1719,7 +1730,7 @@ int ch_cookieIPDestAddresses(ChunkID chunkID, unsigned int mySupportedTypes,
         /* retrieve destination addresses from cookie */
         /* TODO: FIX this    vl_param_total_length parameter, so that later addresses are not
            retrieved as well ! */
-        nAddresses = setIPAddresses(&((SCTP_cookie_echo *)chunks[chunkID])->vlparams[0],
+        nAddresses = setIPAddresses(&((SCTP_cookie_echo *)chunks[chunkID]->simpleChunk)->vlparams[0],
                                                    (guint16)vl_param_total_length, temp_addresses,
                                                    peerSupportedAddressTypes, mySupportedTypes,
                                                    lastSource, FALSE, TRUE);
@@ -1757,13 +1768,13 @@ unsigned int ch_staleCookie(ChunkID chunkID)
     SCTP_our_cookie *cookie_param;
     unsigned int lifetime;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return FALSE;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
-        cookie_echo_chunk = (SCTP_cookie_echo *) chunks[chunkID];
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
+        cookie_echo_chunk = (SCTP_cookie_echo *) chunks[chunkID]->simpleChunk;
         cookie_param = &(cookie_echo_chunk->cookie);
         lifetime = pm_getTime() - cookie_param->sendingTime;
         event_logi(INTERNAL_EVENT_0, "ch_staleCookie: lifetime = %u msecs", lifetime);
@@ -1784,13 +1795,13 @@ unsigned int ch_staleCookie(ChunkID chunkID)
 guint32 ch_CookieLocalTieTag(ChunkID chunkID)
 {
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
-        return (ntohl(((SCTP_cookie_echo *) chunks[chunkID])->cookie.local_tie_tag));
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
+        return (ntohl(((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.local_tie_tag));
     } else {
         error_log(ERROR_MAJOR, "ch_CookieLocalTieTag : Not a CookieEcho chunk !");
         return 0;
@@ -1803,13 +1814,13 @@ guint32 ch_CookieLocalTieTag(ChunkID chunkID)
 guint32 ch_CookiePeerTieTag(ChunkID chunkID)
 {
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
-        return (ntohl(((SCTP_cookie_echo *) chunks[chunkID])->cookie.peer_tie_tag));
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
+        return (ntohl(((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.peer_tie_tag));
     } else {
         error_log(ERROR_MAJOR, "ch_CookiePeerTieTag : Not a CookieEcho chunk !");
         return 0;
@@ -1821,12 +1832,12 @@ guint32 ch_CookiePeerTieTag(ChunkID chunkID)
  */
 guint16 ch_CookieSrcPort(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
         return (ntohs(((SCTP_cookie_echo *) chunks[chunkID])->cookie.src_port));
     } else {
         error_log(ERROR_MAJOR, "ch_CookieLocalPort : Not a CookieEcho chunk !");
@@ -1839,13 +1850,13 @@ guint16 ch_CookieSrcPort(ChunkID chunkID)
  */
 guint16 ch_CookieDestPort(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
-        return (ntohs(((SCTP_cookie_echo *) chunks[chunkID])->cookie.dest_port));
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
+        return (ntohs(((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.dest_port));
     } else {
         error_log(ERROR_MAJOR, "ch_CookieLocalPort : Not a CookieEcho chunk !");
         return 0;
@@ -1872,9 +1883,9 @@ boolean ch_goodCookie(ChunkID chunkID)
         return FALSE;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_COOKIE_ECHO) {
         /* this is a bit messy -- should do some cleanups here */
-        cookie_chunk = (SCTP_cookie_echo *) chunks[chunkID];
+        cookie_chunk = (SCTP_cookie_echo *) chunks[chunkID]->simpleChunk;
         cookie = &(cookie_chunk->cookie);
         /* store HMAC */
         memcpy(cookieSignature, cookie->hmac, HMAC_LEN);
@@ -1971,8 +1982,8 @@ gboolean ch_verifyHeartbeat(ChunkID chunkID)
         return FALSE;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_HBACK) {
-        heartbeatChunk =  (SCTP_heartbeat *)chunks[chunkID];
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_HBACK) {
+        heartbeatChunk =  (SCTP_heartbeat *)chunks[chunkID]->simpleChunk;
         key =  key_operation(KEY_READ);
         if (key == NULL) abort();
         /* store HMAC */
@@ -2021,8 +2032,8 @@ unsigned int ch_HBsendingTime(ChunkID chunkID)
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_HBREQ ||
-        chunks[chunkID]->chunk_header.chunk_id == CHUNK_HBACK) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_HBREQ ||
+        chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_HBACK) {
         return ntohl(((SCTP_heartbeat *) chunks[chunkID])->sendingTime);
     } else {
         error_log(ERROR_MINOR, "ch_HBsendingTime: chunk type not heartbeat or heartbeatAck");
@@ -2036,13 +2047,13 @@ unsigned int ch_HBsendingTime(ChunkID chunkID)
 */
 unsigned int ch_HBpathID(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_HBREQ ||
-        chunks[chunkID]->chunk_header.chunk_id == CHUNK_HBACK) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_HBREQ ||
+        chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_HBACK) {
         return ntohl(((SCTP_heartbeat *) chunks[chunkID])->pathID);
     } else {
         error_log(ERROR_MINOR, "ch_HBsendingTime: chunk type not heartbeat or heartbeatAck");
@@ -2143,7 +2154,7 @@ ch_addParameterToInitChunk(ChunkID initChunkID, unsigned short pCode,
         return;
     }
     index = writeCursor[initChunkID];
-    vlPtr = (SCTP_UnrecognizedParams*) &(chunks[initChunkID]->simple_chunk_data[sizeof(SCTP_init_fixed)+index]);
+    vlPtr = (SCTP_UnrecognizedParams*) &(chunks[initChunkID]->simpleChunk->simple_chunk_data[sizeof(SCTP_init_fixed)+index]);
 
     vlPtr->vlparam_header.param_type = htons(pCode);
     vlPtr->vlparam_header.param_length = htons((unsigned short)(dataLength+sizeof(SCTP_vlparam_header)));
@@ -2161,7 +2172,7 @@ ch_enterErrorCauseData(ChunkID chunkID, unsigned short code,
     SCTP_error_cause * ec;
     unsigned short index;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return;
     }
@@ -2169,12 +2180,13 @@ ch_enterErrorCauseData(ChunkID chunkID, unsigned short code,
         error_log(ERROR_MAJOR, " ch_enterErrorCauseData : chunk already completed");
         return;
     }
-    if (chunks[chunkID]->chunk_header.chunk_id != CHUNK_ERROR && chunks[chunkID]->chunk_header.chunk_id != CHUNK_ABORT) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id != CHUNK_ERROR && 
+				chunks[chunkID]->simpleChunk->chunk_header.chunk_id != CHUNK_ABORT) {
         error_log(ERROR_MAJOR, " ch_enterErrorCauseData : Wrong chunk type");
         return;
     }
     index = writeCursor[chunkID];
-    ec = (SCTP_error_cause*) &(chunks[chunkID]->simple_chunk_data[index]);
+    ec = (SCTP_error_cause*) &(chunks[chunkID]->simpleChunk->simple_chunk_data[index]);
     ec->cause_code = htons(code);
     ec->cause_length = htons((unsigned short)(length+2*sizeof(unsigned short)));
     if (length > 0) {
@@ -2190,12 +2202,13 @@ void ch_enterStaleCookieError(ChunkID chunkID, unsigned int staleness)
 {
     SCTP_staleCookieError *staleCE;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID))
+	{
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_ERROR) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_ERROR) {
         if (chunkCompleted[chunkID]) {
             error_log(ERROR_MAJOR, "ch_enterStaleCookieError: chunk already completed");
             return;
@@ -2203,7 +2216,7 @@ void ch_enterStaleCookieError(ChunkID chunkID, unsigned int staleness)
 
 
         staleCE =
-            (SCTP_staleCookieError *) & chunks[chunkID]->simple_chunk_data[writeCursor[chunkID]];
+            (SCTP_staleCookieError *) & chunks[chunkID]->simpleChunk->simple_chunk_data[writeCursor[chunkID]];
 
         staleCE->vlparam_header.param_type = htons(ECC_STALE_COOKIE_ERROR);
         staleCE->vlparam_header.param_length =
@@ -2231,12 +2244,12 @@ unsigned int ch_stalenessOfCookieError(ChunkID chunkID)
     short vl_param_total_length;
     SCTP_staleCookieError *staleCE;
 
-    if (chunks[chunkID] == NULL) {
+    if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_ERROR) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_ERROR) {
         vl_param_total_length =
             ((SCTP_simple_chunk *) chunks[chunkID])->chunk_header.chunk_length -
             sizeof(SCTP_chunk_header);
@@ -2249,7 +2262,7 @@ unsigned int ch_stalenessOfCookieError(ChunkID chunkID)
 
         if (vl_param_curs >= 0) {
             /* found cookie staleness of cookie */
-            staleCE = (SCTP_staleCookieError *) & chunks[chunkID]->simple_chunk_data[vl_param_curs];
+            staleCE = (SCTP_staleCookieError *) & chunks[chunkID]->simpleChunk->simple_chunk_data[vl_param_curs];
             return ntohl(staleCE->staleness);
         } else {
             /* return 0, no effect on cookie lifetime */
@@ -2301,14 +2314,15 @@ unsigned int ch_cummulativeTSNacked(ChunkID chunkID)
 {
     unsigned int *cummTSNacked;
 
-    if (chunks[chunkID] == NULL) {
+    if (chunks[chunkID]->simpleChunk == NULL || 
+				chunks[chunkID]->ether_start) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    if (chunks[chunkID]->chunk_header.chunk_id == CHUNK_SHUTDOWN) {
+    if (chunks[chunkID]->simpleChunk->chunk_header.chunk_id == CHUNK_SHUTDOWN) {
         cummTSNacked =
-            (unsigned int *) (&((SCTP_simple_chunk *) chunks[chunkID])->simple_chunk_data[0]);
+            (unsigned int *) (&((SCTP_simple_chunk *) chunks[chunkID]->simpleChunk)->simple_chunk_data[0]);
         return ntohl(*cummTSNacked);
     } else {
         error_log(ERROR_MAJOR, "ch_cummulativeTSNacked: chunk type not init or initAck");
@@ -2329,7 +2343,7 @@ unsigned char ch_chunkType(ChunkID chunkID)
         return 0;
     }
 
-    return chunks[chunkID]->chunk_header.chunk_id;
+    return chunks[chunkID]->simpleChunk->chunk_header.chunk_id;
 }
 
 
@@ -2338,12 +2352,12 @@ unsigned char ch_chunkType(ChunkID chunkID)
 */
 unsigned short ch_chunkLength(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (chunks[chunkID]->simpleChunk == NULL) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
 
-    return chunks[chunkID]->chunk_header.chunk_length;
+    return chunks[chunkID]->simpleChunk->chunk_header.chunk_length;
 }
 
 
@@ -2352,16 +2366,17 @@ unsigned short ch_chunkLength(ChunkID chunkID)
 */
 SCTP_simple_chunk *ch_chunkString(ChunkID chunkID)
 {
-    if (chunks[chunkID] == NULL) {
+    if (chunks[chunkID]->simpleChunk == NULL ||
+				chunks[chunkID]->ether_start == NULL) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return NULL;
     }
 
-    chunks[chunkID]->chunk_header.chunk_length =
-        htons((unsigned short)(chunks[chunkID]->chunk_header.chunk_length + writeCursor[chunkID]));
+    chunks[chunkID]->simpleChunk->chunk_header.chunk_length =
+        htons((unsigned short)(chunks[chunkID]->simpleChunk->chunk_header.chunk_length + writeCursor[chunkID]));
     chunkCompleted[chunkID] = TRUE;
 
-    return chunks[chunkID];
+    return chunks[chunkID]->simpleChunk;
 }
 
 
@@ -2419,8 +2434,10 @@ void ch_forgetChunk(ChunkID chunkID)
 
     cid = chunkID;
 
-    if (chunks[chunkID] != NULL) {
-        chunks[chunkID] = NULL;
+    if (chunks[chunkID]->simpleChunk != NULL &&
+				chunks[chunkID]->ether_start != NULL) {
+        chunks[chunkID]->simpleChunk = NULL;
+		chunks[chunkID]->ether_start = NULL;
         event_logi(INTERNAL_EVENT_0, "forgot chunk %u", cid);
     } else {
         error_log(ERROR_MAJOR, "chunk already forgotten");

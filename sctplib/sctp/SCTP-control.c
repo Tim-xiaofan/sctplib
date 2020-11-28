@@ -675,6 +675,8 @@ int sctlr_init(SCTP_init * init)
     int return_state = STATE_OK;
 
     event_log(EXTERNAL_EVENT, "sctlr_init() is executed");
+	event_logii(VVERBOSE, "sctlr_init: got init chunk start[%p],ether_start[%p]",
+				init, adl_get_ether_beginning());
 	/*修改并保留INIT到ch模块的chunks数组,供之后Z端初始化偶联使用*/
     initCID = ch_makeChunk((SCTP_simple_chunk *) init);
 
@@ -947,6 +949,8 @@ gboolean sctlr_initAck(SCTP_init * initAck)
     gboolean peerSupportsPRSCTP = FALSE;
 
     initAckCID = ch_makeChunk((SCTP_simple_chunk *) initAck);
+	event_logii(VVERBOSE, "sctlr_initAck: got init ack chunk start[%p],ether_start[%p]",
+				initAck, adl_get_ether_beginning());
 
     if (ch_chunkType(initAckCID) != CHUNK_INIT_ACK) {
         /* error logging */
@@ -970,9 +974,9 @@ gboolean sctlr_initAck(SCTP_init * initAck)
         /* Set length of chunk to HBO(host byte order) !! 
 		 * retrieve INIT stored before*/
         initCID = ch_makeChunk((SCTP_simple_chunk *) localData->initChunk);
-		printf("sctlr_initAck:INIT traceinitiateTag[%0x], at %p\n", ch_initiateTag(initCID), localData->initChunk);
+		printf("sctlr_initAck:INIT traceinitiateTag[%0x], statrt[%p]\n", ch_initiateTag(initCID), localData->initChunk);
 		int initAckCID1 = ch_makeChunk((SCTP_simple_chunk *) localData->initAck);
-		printf("sctlr_initAck:INIT ACK traceinitiateTag[%0x], at %p\n", ch_initiateTag(initAckCID1), localData->initAck);
+		printf("sctlr_initAck:INIT ACK traceinitiateTag[%0x], start[%p]\n", ch_initiateTag(initAckCID1), localData->initAck);
         ch_chunkString(initAckCID1);
 		ch_forgetChunk(initAckCID1);
         /* FIXME: check also the noPeerOutStreams <= noLocalInStreams */
@@ -1135,7 +1139,7 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
     union sockunion dAddresses[MAX_NUM_ADDRESSES];
     int ndAddresses, result;
     guint32 state, new_state = 0xFFFFFFFF;
-    unsigned int cookieLifetime;
+    //unsigned int cookieLifetime;
     unsigned int mySupportedTypes;
     ChunkID cookieCID;
     ChunkID cookieAckCID;
@@ -1156,7 +1160,8 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
     int SendCommUpNotification = -1;
 
     event_log(INTERNAL_EVENT_0, "sctlr_cookie_echo() is being executed");
-
+	event_logii(VVERBOSE, "sctlr_cookie_echo: got cookie_echo chunk start[%p],ether_start[%p]",
+				cookie_echo, adl_get_ether_beginning());
 	/*store the chunk into chunklist*/
     cookieCID = ch_makeChunk((SCTP_simple_chunk *) cookie_echo);
     if (ch_chunkType(cookieCID) != CHUNK_COOKIE_ECHO) {
@@ -1196,17 +1201,19 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
     /* these two will be zero, if association is not up yet */
     local_tag  = mdi_readLocalTag();
     remote_tag = mdi_readTagRemote();
+
+	/**/
     if ((mdi_readLastInitiateTag()   != cookie_local_tag) &&
         (mdi_readLastFromPort()      != ch_CookieSrcPort(cookieCID)) &&
         (mdi_readLastDestPort()      != ch_CookieDestPort(cookieCID)))  {
 
+        event_log(EXTERNAL_EVENT, "event: good cookie echo received, but with incorrect verification tag");
 		event_logii(EXTERNAL_EVENT, "lastInitiateTag[%0x], cookie_local_tag[%0x]", 
 					mdi_readLastInitiateTag(), cookie_local_tag);
 		event_logii(EXTERNAL_EVENT, "lastFromPort[%u], cookieSrcPort[%u]", 
 					mdi_readLastFromPort(), ch_CookieSrcPort(cookieCID));
 		event_logii(EXTERNAL_EVENT, "lastDestPort[%u], cookieDestPort[%u]", 
 					mdi_readLastDestPort(), ch_CookieDestPort(cookieCID));
-        event_log(EXTERNAL_EVENT, "event: good cookie echo received, but with incorrect verification tag");
         ch_forgetChunk(cookieCID);
         ch_deleteChunk(initCID);
         ch_deleteChunk(initAckCID);
@@ -1214,27 +1221,27 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
     }
 
     /* section 5.2.4. 3.) */
-    if ((cookieLifetime = ch_staleCookie(cookieCID)) > 0) {
-        event_logi(EXTERNAL_EVENT, "event: staleCookie received, lifetime = %d", cookieLifetime);
+    //if ((cookieLifetime = ch_staleCookie(cookieCID)) > 0) {/*>0:stale*/
+    //    event_logi(EXTERNAL_EVENT, "event: staleCookie received, lifetime = %d", cookieLifetime);
 
-        if ((cookie_local_tag != local_tag) || (cookie_remote_tag != remote_tag)) {
+    //    if ((cookie_local_tag != local_tag) || (cookie_remote_tag != remote_tag)) {
+	//		event_logiiii(VVERBOSE, "sctlr_cookie_echo:cookie tag err %0x, %0x, %0x, %0x", 
+	//					cookie_local_tag, local_tag, cookie_remote_tag, remote_tag);
+    //        mdi_writeLastInitiateTag(cookie_remote_tag);
+    //        /* make and send stale cookie error */
+    //        errorCID = ch_makeSimpleChunk(CHUNK_ERROR, FLAG_NONE);
+    //        ch_enterStaleCookieError(errorCID, (unsigned int) (1.2 * cookieLifetime));
+    //        bu_put_Ctrl_Chunk(ch_chunkString(errorCID),NULL);
+    //        bu_sendAllChunks(NULL);
+    //        ch_forgetChunk(cookieCID);
+    //        ch_deleteChunk(initCID);
+    //        ch_deleteChunk(initAckCID);
+    //        ch_deleteChunk(errorCID);
+    //        return;
+    //    }                       /* ELSE : Case 5.2.4.E. Valid Cookie, unpack into a TCB */
+    //}
 
-            mdi_writeLastInitiateTag(cookie_remote_tag);
-            /* make and send stale cookie error */
-            errorCID = ch_makeSimpleChunk(CHUNK_ERROR, FLAG_NONE);
-            ch_enterStaleCookieError(errorCID, (unsigned int) (1.2 * cookieLifetime));
-            bu_put_Ctrl_Chunk(ch_chunkString(errorCID),NULL);
-            bu_sendAllChunks(NULL);
-            ch_forgetChunk(cookieCID);
-            ch_deleteChunk(initCID);
-            ch_deleteChunk(initAckCID);
-            ch_deleteChunk(errorCID);
-            return;
-        }                       /* ELSE : Case 5.2.4.E. Valid Cookie, unpack into a TCB */
-    }
-
-
-    result = mdi_readLastFromAddress(&destAddress);
+    result = mdi_readLastInstanceFromAddress(&destAddress);
     if (result != 0) {
        error_log(ERROR_MAJOR, "sctlr_cookie_echo: mdi_readLastFromAddress failed !");
        ch_deleteChunk(initCID);
@@ -1242,9 +1249,12 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
        ch_forgetChunk(cookieCID);
        return;
     }
-
-	event_log(VVERBOSE, "sctlr_cookie_echo: call mdi_readSCTP_control");
-    if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
+	
+    /*5.1.5. 5)  State Cookie Authentication
+	 *If the State Cookie is valid, create an association to the sender
+	 *of the COOKIE ECHO chunk with the information in the TCB data
+	 *carried in the COOKIE ECHO and enter the ESTABLISHED state*/
+	if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
         noOfDestinationAddresses = 1;
         primaryDestinationAddress = 0;
 
@@ -1285,16 +1295,17 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
         event_log(EXTERNAL_EVENT, "event: sctlr_cookie_echo in state CLOSED");
         mySupportedTypes = mdi_getSupportedAddressTypes();
         /* retrieve destination addresses from cookie */
-        ndAddresses = ch_cookieIPDestAddresses(cookieCID, mySupportedTypes, dAddresses,&peerAddressTypes, &destAddress);
+        //ndAddresses = ch_cookieIPDestAddresses(cookieCID, mySupportedTypes, dAddresses,&peerAddressTypes, &destAddress);
 
-        if (ndAddresses > 0) {
-            /* save addresses if initAck contained more then zero, otherwise the source address
-               of the IP-message carrying the cookie-chunk will be used for this association. */
-            event_logi(VERBOSE, "Storing %d destination addresses as paths", ndAddresses);
-            mdi_writeDestinationAddresses(dAddresses, ndAddresses);
-        }
+        //if (ndAddresses > 0) {
+        //    /* save addresses if initAck contained more then zero, otherwise the source address
+        //       of the IP-message carrying the cookie-chunk will be used for this association. */
+        //    event_logi(VERBOSE, "Storing %d destination addresses as paths", ndAddresses);
+        //    mdi_writeDestinationAddresses(dAddresses, ndAddresses);
+        //}
 
         peerSupportsPRSCTP = ch_getPRSCTPfromCookie(cookieCID);
+		event_logi(VVERBOSE, "sctlr_cookie_echo:peerSupportsPRSCTP[FALSE]", peerSupportsPRSCTP);
 
         /* initialize new association from cookie data */
         mdi_initAssociation(ch_receiverWindow(initCID),
@@ -1542,7 +1553,6 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
         else if (SendCommUpNotification == SCTP_COMM_UP_RECEIVED_VALID_COOKIE)
              mdi_communicationUpNotif(SCTP_COMM_UP_RECEIVED_VALID_COOKIE);
     }
-
 }
 
 
@@ -2263,7 +2273,7 @@ void sci_associate(unsigned short noOfOutStreams,
 		/*store INIT for retransmission later*/
         localData->initChunk = (SCTP_init *) ch_chunkString(initCID);
 		short initCID1 = ch_makeChunk((SCTP_simple_chunk *)localData->initChunk);
-		printf("sci_associate:INIT traceinitiateTag[%0x], at %p\n", ch_initiateTag(initCID1), localData->initChunk);
+		printf("sci_associate:INIT traceinitiateTag[%0x], start[%p]\n", ch_initiateTag(initCID1), localData->initChunk);
 		ch_chunkString(initCID1);
 		ch_forgetChunk(initCID1);
 		if(localData->initChunk == NULL)

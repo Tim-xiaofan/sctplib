@@ -742,6 +742,16 @@ gint adl_get_sctpv4_socket(void)
 	return sctp_sfd;
 }
 
+void *adl_get_ether_beginning(void)
+{
+	/* the beginning of the ether fram ! */
+	if(msg == NULL)
+	{
+		event_log(VVERBOSE, "no ether packet got");
+		return NULL;
+	}
+	return (void *)((char*)msg + sizeof(int));
+}
 /**/
 void adl_get_sctp_rings(struct rte_ring *rr, struct rte_ring *rr1, struct rte_ring *sr, struct rte_ring *sr1, struct rte_mempool *mp)
 {
@@ -1403,7 +1413,14 @@ int adl_get_message(int sfd, void *dest, int maxlen, union sockunion *from, sock
 
 	return len;
 }
-/*dpdk ring, void *dest, union sockunion *from, union sockunion *to)*/
+/**
+ *@param recv_ring				dpdk ring where receive a datagram
+ *@param msg_len				the length of datagram
+ *@param ether_start            to store the start memory addr of the ether packet
+ *@param union sockunion *from	source IP address
+ *@param union sockunion *to	destination IP address
+ *@return pointer to the start of the IP packet
+ */
 void *adl_recv_from_ring(struct rte_ring *recv_ring, int *msg_len, union sockunion *from, union sockunion *to)
 {
 	if (rte_ring_dequeue(recv_ring, &msg) < 0)
@@ -1451,8 +1468,8 @@ void *adl_recv_from_ring(struct rte_ring *recv_ring, int *msg_len, union sockuni
 	from->sin.sin_addr.s_addr = iph->saddr;/*设置协议簇*/
 	guchar buf2[64];
 	adl_sockunion2str(from, buf2, 64);
-	event_logiiiii(VVERBOSE, "got a %d bytes packet from ring'%s' at %p, saddr=%s, daddr=%s", 
-				len, recv_ring->name, msg, buf1, buf2);
+	event_logiiiiiiii(VVERBOSE, "got an ether packet from ring[%s], len[%d],start[%p],saddr[%s],daddr[%s] [%d%d%d]", 
+				recv_ring->name, len, (char *)msg + sizeof(int), buf1, buf2, 0, 0, 0);
 	zlog_data((unsigned char *)msg + sizeof(int), len);
 	/*去掉以太网头*/
 	*msg_len = len - 14;
@@ -1469,7 +1486,7 @@ int dispatch_rings(void)
 
 	int i = 0;
 	struct rte_ring *m_ring = NULL;
-	for(i = 0; i < 2; i++)/*轮询两个接收ring*/
+	for(i = 0; i < 2; i++)/*poll dpdk rings*/
 	{
 		if(i == 0)
 			m_ring = adl_recv_ring;
@@ -1478,7 +1495,7 @@ int dispatch_rings(void)
 		if(rte_ring_count(m_ring) > 0)
 		{
 			void *m_msg = adl_recv_from_ring(m_ring, &length, &src, &dest);
-			event_logii(VVERBOSE, "dispatch_rings:after rm ether hdr packet len = %d at %p", length, m_msg);
+			event_logii(VVERBOSE, "dispatch_rings:got a IP packet len[%d], ether_beginning[%p]", length, adl_get_ether_beginning());
 			if (length < 0)
 				if (length < 0)
 					break;

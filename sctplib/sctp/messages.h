@@ -396,6 +396,12 @@ typedef struct SCTP_SIMPLE_CHUNK
     unsigned char simple_chunk_data[MAX_SIMPLE_CHUNKDATA_LENGTH];
 } SCTP_simple_chunk;
 
+typedef struct SCTP_SIMPLE_CHUNK_WRAPPER
+{
+	SCTP_simple_chunk *simpleChunk;
+	void *ether_start;
+}SCTP_simple_chunk_wrapper;
+
 typedef struct __pr_stream_data
 {
     guint16 stream_id;
