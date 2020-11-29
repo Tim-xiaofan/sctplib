@@ -429,7 +429,7 @@ setIPAddresses(unsigned char *mstring, guint16 length, union sockunion addresses
 }
 
 
-static void enterChunk(SCTP_simple_chunk * chunk, const char *log_text)
+static void enterChunk(SCTP_simple_chunk_wrapper * chunk_wrapper, const char *log_text)
 {
     unsigned int cid;
 
@@ -438,8 +438,7 @@ static void enterChunk(SCTP_simple_chunk * chunk, const char *log_text)
     cid = freeChunkID;
     event_logi(INTERNAL_EVENT_0, log_text, cid);
 
-    chunks[freeChunkID]->simpleChunk = chunk;
-	chunks[freeChunkID]->ether_start = adl_get_ether_beginning();
+    chunks[freeChunkID] = chunk_wrapper;
     writeCursor[freeChunkID] = 0;
     chunkCompleted[freeChunkID] = FALSE;
 }
@@ -2393,8 +2392,11 @@ ChunkID ch_makeChunk(SCTP_simple_chunk * chunk)
      * into the current list
      */
     chunk->chunk_header.chunk_length = ntohs(chunk->chunk_header.chunk_length);
-
-    enterChunk(chunk, "created chunk from string %u ");
+	SCTP_simple_chunk_wrapper *tmp = 
+		(SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
+	tmp->simpleChunk = chunk;
+	tmp->ether_start = adl_get_ether_beginning();
+    enterChunk(tmp, "created chunk from string %u ");
 
     return freeChunkID;
 }
