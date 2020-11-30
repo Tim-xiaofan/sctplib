@@ -200,12 +200,13 @@ int mdi_updateMyAddressList(void);
    from the list of associations and stored in a private but static datastructure.
    Elements of this association data can be read by the following functions.
 */
-unsigned int mdi_associatex(short initID, void *ulp_data);
+unsigned int mdi_associatex(unsigned int SCTP_InstanceName, short initID, void *ulp_data);
 /* The following functions return pointer to data of modules of the SCTP. As only these
    modules know the exact type of these data structures, so the returned pointer are
    of type void.
 */
 
+unsigned int mdi_retrieveInstanceNameByTansportAddress(unsigned short localPort, union sockunion * localAddress);
 
 /* The following functions return pointer to data of modules of the SCTP. As only these
    modules know the exact type of these data structures, so the returned pointer are

@@ -644,12 +644,66 @@ void scu_abort(short error_type, unsigned short error_param_length, unsigned cha
 /*------------------- Functions called by the (de-)bundling for received control chunks ----------*/
 
 /**
+ * sci_init is called by bundling when a init message is received from the peer.
+ * if no TCB A' create it and send the init-chunk to cell B
+ * @param init  pointer to the received init-chunk (including optional parameters)
+ */
+int sci_init(ChunkID initCID)
+{
+    /*  this function does not expect any data allocated for the new association,
+       but if there are, implementation will act according to section 5.2.1 (simultaneous
+       initialization) and section 5.2.2 (duplicate initialization)
+     */
+
+    unsigned int state;
+    union sockunion last_source;
+
+    ChunkID initCID_local;
+    ChunkID initAckCID;
+    ChunkID abortCID;
+    ChunkID shutdownAckCID;
+    unsigned short inbound_streams;
+    unsigned int supportedTypes=0, peerSupportedTypes=0;
+    int process_further, result;
+
+    event_log(EXTERNAL_EVENT, "sci_init() is executed");
+
+    if (ch_chunkType(initCID) != CHUNK_INIT) {
+        /* error logging */
+        ch_forgetChunk(initCID);
+        error_log(ERROR_MAJOR, "sci_init: wrong chunk type");
+        return -1;
+    }
+
+    if (ch_noOutStreams(initCID) == 0 || ch_noInStreams(initCID) == 0 || ch_initiateTag(initCID) == 0) {
+        event_log(EXTERNAL_EVENT, "sci_init: attempt to send an init with zero number of streams, or zero TAG");
+		return -1;
+	}
+
+    result = mdi_readLastInstanceFromAddress(&last_source);
+	unsigned short lastFromPort = mdi_readLastInstanceFromPort();
+    if (result != 0) {
+        event_log(EXTERNAL_EVENT, "sci_init: cannot get where the init from");
+		return -1;
+    }
+	unsigned short sctpInstanceName = mdi_retrieveInstanceNameByTansportAddress(lastFromPort, &last_source);
+	if(mdi_associatex(sctpInstanceName, initCID, NULL) == 0)
+	{
+		error_log(ERROR_MAJOR, "associate faile");
+		return -1;
+	}
+	event_log(INTERNAL_EVENT_0, "*******************creat and init a Association TCB");
+	return 0;
+}
+
+/**
  * sctlr_init is called by bundling when a init message is received from the peer.
  * an InitAck may be returned, alongside with a cookie chunk variable parameter.
  * The following data are created and included in the init acknowledgement:
  * a COOKIE parameter.
  * @param init  pointer to the received init-chunk (including optional parameters)
- */
+ * MOD:now donnot return init ack
+ **/
 int sctlr_init(SCTP_init * init)
 {
     /*  this function does not expect any data allocated for the new association,
@@ -661,7 +715,7 @@ int sctlr_init(SCTP_init * init)
     guint16 nlAddresses;
     union sockunion lAddresses[MAX_NUM_ADDRESSES];
     guint16 nrAddresses;
-    union sockunion rAddresses[MAX_NUM_ADDRESSES];/* to be master's dest_addr , slave's local_addr*/
+    union sockunion rAddresses[MAX_NUM_ADDRESSES];
     union sockunion last_source;
 
     ChunkID initCID;
@@ -675,9 +729,7 @@ int sctlr_init(SCTP_init * init)
     int return_state = STATE_OK;
 
     event_log(EXTERNAL_EVENT, "sctlr_init() is executed");
-	event_logii(VVERBOSE, "sctlr_init: got init chunk start[%p],ether_start[%p]",
-				init, adl_get_ether_beginning());
-	/*修改并保留INIT到ch模块的chunks数组,供之后Z端初始化偶联使用*/
+
     initCID = ch_makeChunk((SCTP_simple_chunk *) init);
 
     if (ch_chunkType(initCID) != CHUNK_INIT) {
@@ -712,14 +764,12 @@ int sctlr_init(SCTP_init * init)
 
     result = mdi_readLastInstanceFromAddress(&last_source);
     if (result != 0) {
-        if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL)
-		{
+        if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
             mdi_clearAssociationData();
             return_state = STATE_STOP_PARSING_REMOVED;
             return return_state;
         }
-        if (localData->initTimer != 0)
-		{
+        if (localData->initTimer != 0) {
             sctp_stopTimer(localData->initTimer);
             localData->initTimer = 0;
         }
@@ -730,19 +780,24 @@ int sctlr_init(SCTP_init * init)
         return_state = STATE_STOP_PARSING_REMOVED;
         return return_state;
     }
-	if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
-		/* DO_5_1_B_INIT : Normal case, no association exists yet */
-		/* create Master TCB and it's Slave TCB */
-		
-		/*start an association, create A' TCB and init it*/
-		if(mdi_associatex(initCID, NULL) == 0)
-		{
-			error_log(ERROR_MAJOR, "associate faile");
-			return return_state;
-		}
-		event_log(INTERNAL_EVENT_0, "*******************creat and init a Association TCB");
-		return_state = STATE_STOP_PARSING; /* to stop parsing without actually removing it */
-	}
+
+    if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL)
+	{
+        event_log(VERBOSE, " DO_5_1_B_INIT: Normal init case ");
+        /* DO_5_1_B_INIT : Normal case, no association exists yet */
+        /* save a-sides init-tag from init-chunk to be used as a verification tag of the sctp-
+           message carrying the initAck (required since no association is created). */
+        mdi_writeLastInitiateTag(ch_initiateTag(initCID));
+
+        /* Limit the number of sendstreams a-side requests to the max. number of input streams
+           this z-side is willing to accept.
+         */
+        /* don't fire back an InitAck with a Cookie, and start association with creat TCB A' */
+		if(sci_init(initCID) < 0)
+			return_state = STATE_STOP_PARSING_REMOVED; /* to stop parsing with actually removing it */
+		else
+			return_state = STATE_STOP_PARSING; /* to stop parsing without actually removing it */
+    } 
 	else 
 	{
         /* save a-sides init-tag from init-chunk to be used as a verification tag of the sctp-
@@ -915,6 +970,7 @@ int sctlr_init(SCTP_init * init)
 }
 
 
+
 /**
  * sctlr_initAck is called by bundling when a init acknowledgement was received from the peer.
  * The following data are retrieved from the init-data and saved for this association:
@@ -949,8 +1005,8 @@ gboolean sctlr_initAck(SCTP_init * initAck)
     gboolean peerSupportsPRSCTP = FALSE;
 
     initAckCID = ch_makeChunk((SCTP_simple_chunk *) initAck);
-	event_logii(VVERBOSE, "sctlr_initAck: got init ack chunk start[%p],ether_start[%p]",
-				initAck, adl_get_ether_beginning());
+	event_logii(VVERBOSE, "sctlr_initAck: got init ack chunk start[%p],obj[%p]",
+				initAck, adl_get_dpdk_obj());
 
     if (ch_chunkType(initAckCID) != CHUNK_INIT_ACK) {
         /* error logging */
@@ -1113,7 +1169,11 @@ gboolean sctlr_initAck(SCTP_init * initAck)
     return return_state;
 }
 
+/*fwd a cookie_echo*/
+void sci_cookie_echo(SCTP_cookie_echo * cookie_echo)
+{
 
+}
 /**
   sctlr_cookie_echo is called by bundling when a cookie echo chunk was received from  the peer.
   The following data is retrieved from the cookie and saved for this association:
@@ -1160,8 +1220,8 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
     int SendCommUpNotification = -1;
 
     event_log(INTERNAL_EVENT_0, "sctlr_cookie_echo() is being executed");
-	event_logii(VVERBOSE, "sctlr_cookie_echo: got cookie_echo chunk start[%p],ether_start[%p]",
-				cookie_echo, adl_get_ether_beginning());
+	event_logii(VVERBOSE, "sctlr_cookie_echo: got cookie_echo chunk start[%p],obj[%p]",
+				cookie_echo, adl_get_dpdk_obj());
 	/*store the chunk into chunklist*/
     cookieCID = ch_makeChunk((SCTP_simple_chunk *) cookie_echo);
     if (ch_chunkType(cookieCID) != CHUNK_COOKIE_ECHO) {
@@ -1321,21 +1381,23 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
             localData->NumberOfOutStreams, localData->NumberOfInStreams);
 
 
-        /* make cookie acknowledgement */
-        cookieAckCID = ch_makeSimpleChunk(CHUNK_COOKIE_ACK, FLAG_NONE);
+        ///* make cookie acknowledgement */
+        //cookieAckCID = ch_makeSimpleChunk(CHUNK_COOKIE_ACK, FLAG_NONE);
 
-        /* send cookie acknowledgement */
-        bu_put_Ctrl_Chunk(ch_chunkString(cookieAckCID),NULL);
-        bu_sendAllChunks(NULL);
-        bu_unlock_sender(NULL);
-        ch_deleteChunk(cookieAckCID);
+        ///* send cookie acknowledgement */
+        //bu_put_Ctrl_Chunk(ch_chunkString(cookieAckCID),NULL);
+        //bu_sendAllChunks(NULL);
+        //bu_unlock_sender(NULL);
+        //ch_deleteChunk(cookieAckCID);
 
-        /* notification to ULP */
-        SendCommUpNotification = SCTP_COMM_UP_RECEIVED_VALID_COOKIE;
+        ///* notification to ULP */
+        //SendCommUpNotification = SCTP_COMM_UP_RECEIVED_VALID_COOKIE;
 
-        /* mdi_communicationUpNotif(SCTP_COMM_UP_RECEIVED_VALID_COOKIE); */
+        ///* mdi_communicationUpNotif(SCTP_COMM_UP_RECEIVED_VALID_COOKIE); */
 
-        new_state = ESTABLISHED;
+        //new_state = ESTABLISHED;
+		/*donot send cookie ack*/
+		new_state = CLOSED;
         break;
 
         /* For the rest of these (pathological) cases, refer to section 5.2.4 as to what to do */
@@ -2244,13 +2306,15 @@ void sci_allChunksAcked()
  * @param numDestAddresses
  * @param withPRSCTP
  * @param initCID				the index of INIT provied
+ * @param send_ring				which dpdk ring to send
  */
 void sci_associate(unsigned short noOfOutStreams,
                    unsigned short noOfInStreams,
                    union sockunion* destinationList,
                    unsigned int numDestAddresses,
                    gboolean withPRSCTP,
-				   short initCID)
+				   short initCID,
+				   void *send_ring)
 {
     guint32 state;
 	unsigned int count;
@@ -2271,11 +2335,8 @@ void sci_associate(unsigned short noOfOutStreams,
         localData->NumberOfInStreams = noOfInStreams;
         
 		/*store INIT for retransmission later*/
-        localData->initChunk = (SCTP_init *) ch_chunkString(initCID);
-		short initCID1 = ch_makeChunk((SCTP_simple_chunk *)localData->initChunk);
-		printf("sci_associate:INIT traceinitiateTag[%0x], start[%p]\n", ch_initiateTag(initCID1), localData->initChunk);
-		ch_chunkString(initCID1);
-		ch_forgetChunk(initCID1);
+        localData->initChunk = (SCTP_init *) ch_chunkString(initCID);/*HBO to NBO*/
+		printf("sci_associate:INIT traceinitiateTag[%0x], start[%p]\n", ntohl(((SCTP_init *)localData->initChunk)->init_fixed.init_tag) , localData->initChunk);
 		if(localData->initChunk == NULL)
 		{
 			error_log(ERROR_FATAL, "cannot keep INIT for retransmission");
@@ -2285,8 +2346,9 @@ void sci_associate(unsigned short noOfOutStreams,
 
         /* send init chunk */
         for (count = 0; count < numDestAddresses; count++) {
-            bu_put_Ctrl_Chunk((SCTP_simple_chunk *) localData->initChunk, &count);
-			mdi_setSeletedSendRing(mdi_readInstanceSendRing());
+			/*the length must be NBO*/
+            bu_put_Ctrl_Chunk((SCTP_simple_chunk *) (localData->initChunk), &count);
+			mdi_setSeletedSendRing(send_ring);
             bu_sendAllChunks(&count);
         }
 

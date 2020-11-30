@@ -1329,10 +1329,8 @@ unsigned int ch_initiateTag(ChunkID chunkID)
     } else {
         error_log(ERROR_MAJOR, "ch_initiateTag: chunk type not init or initAck");
         return 0;
-
     }
 }
-
 
 
 /* ch_receiverWindow reads the remote receiver window from an init or initAck */
@@ -2476,7 +2474,7 @@ ChunkID ch_makeChunk(SCTP_simple_chunk * chunk)
 	SCTP_simple_chunk_wrapper *tmp = 
 		(SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
 	tmp->simpleChunk = chunk;
-	tmp->obj = adl_get_ether_beginning();
+	tmp->obj = adl_get_dpdk_obj();
     enterChunk(tmp, "created chunk from string %u ");
 
     return freeChunkID;

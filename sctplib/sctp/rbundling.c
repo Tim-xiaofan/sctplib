@@ -373,8 +373,8 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
        - CHUNK_ERROR probably to SCTP_CONTROL as well  (at least there !)
        - CHUNK_DATA goes to RX_CONTROL
      */
-	event_logiiii(VVERBOSE, "rbu_rcvDatagram: got several chunks totalLen[%d],start[%p],ether_start[%p],[%d]",
-				len, datagram, adl_get_ether_beginning(), 0);
+	event_logiiii(VVERBOSE, "rbu_rcvDatagram: got several chunks totalLen[%d],start[%p],obj[%p],[%d]",
+				len, datagram, adl_get_dpdk_obj(), 0);
     guchar *current_position;
     gushort processed_len = 0, chunk_len;/*已处理长度*/
     gushort pad_bytes;
@@ -451,7 +451,8 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
             break;
         case CHUNK_COOKIE_ECHO:
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ECHO chunk");
-            sctlr_cookie_echo((SCTP_cookie_echo *) chunk);/*create association_state A'*/
+            sctlr_cookie_echo((SCTP_cookie_echo *) chunk);/*create TCB B'*/
+			sci_cookie_echo((SCTP_cookie_echo *) chunk);/*TCB A' send it to cell B */
             break;
         case CHUNK_COOKIE_ACK:
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ACK chunk");

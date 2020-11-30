@@ -159,6 +159,7 @@ int sctlr_initAck(SCTP_init * initAck);
 void sctlr_cookie_echo(SCTP_cookie_echo * cookie);
 
 
+void sci_cookie_echo(SCTP_cookie_echo * cookie_echo);
 
 /* sctlr_cookieAck is called by bundling when a cookieAck chunk was received from  the peer.
    The only purpose is to inform the active side that peer has received the cookie chunk.
@@ -218,7 +219,8 @@ void sci_associate(unsigned short noOfOutStreams,
                    union sockunion* destinationList,
                    unsigned int numDestAddresses,
                    gboolean withPRSCTP,
-				   short initCID);
+				   short initCID,
+				   void *send_ring);
 /* newSCTP_control allocates data for a new SCTP-Control instance
 */
 void *sci_newSCTP_control(void* sctpInstance);

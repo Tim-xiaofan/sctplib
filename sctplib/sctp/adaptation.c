@@ -759,15 +759,15 @@ gint adl_get_sctpv4_socket(void)
 	return sctp_sfd;
 }
 
-void *adl_get_ether_beginning(void)
+void *adl_get_dpdk_obj(void)
 {
 	/* the beginning of the ether fram ! */
 	if(msg == NULL)
 	{
-		event_log(VVERBOSE, "no ether packet got");
+		event_log(VVERBOSE, "no dpdk obj got");
 		return NULL;
 	}
-	return (void *)((char*)msg + sizeof(int));
+	return msg;
 }
 /**/
 void adl_get_sctp_rings(struct rte_ring *rr, struct rte_ring *rr1, struct rte_ring *sr, struct rte_ring *sr1, struct rte_mempool *mp)
@@ -1485,11 +1485,12 @@ void *adl_recv_from_ring(struct rte_ring *recv_ring, int *msg_len, union sockuni
 	from->sin.sin_addr.s_addr = iph->saddr;/*设置协议簇*/
 	guchar buf2[64];
 	adl_sockunion2str(from, buf2, 64);
-	event_logiiiiiiii(VVERBOSE, "got an ether packet from ring[%s], len[%d],start[%p],saddr[%s],daddr[%s] [%d%d%d]", 
-				recv_ring->name, len, (char *)msg + sizeof(int), buf1, buf2, 0, 0, 0);
+	event_logiiiiiiii(VVERBOSE, "got an ether packet from ring[%s],len[%d],obj[%p],saddr[%s],daddr[%s] [%d%d%d]", 
+				recv_ring->name, len, msg, buf1, buf2, 0, 0, 0);
 	zlog_data((unsigned char *)msg + sizeof(int), len);
-	/*去掉以太网头*/
-	*msg_len = len - 14;
+	/*IP datagram total len*/
+	*msg_len = ntohs(iph->tot_len);
+	/*mv to IP */
 	return (void*)((char *)msg + offset);
 }
 
@@ -1512,7 +1513,7 @@ int dispatch_rings(void)
 		if(rte_ring_count(m_ring) > 0)
 		{
 			void *m_msg = adl_recv_from_ring(m_ring, &length, &src, &dest);
-			event_logii(VVERBOSE, "dispatch_rings:got a IP packet len[%d], ether_beginning[%p]", length, adl_get_ether_beginning());
+			event_logii(VVERBOSE, "dispatch_rings:got a IP packet len[%d], obj[%p]", length, adl_get_dpdk_obj());
 			if (length < 0)
 				if (length < 0)
 					break;
