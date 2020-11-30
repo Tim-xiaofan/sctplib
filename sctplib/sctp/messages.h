@@ -399,7 +399,7 @@ typedef struct SCTP_SIMPLE_CHUNK
 typedef struct SCTP_SIMPLE_CHUNK_WRAPPER
 {
 	SCTP_simple_chunk *simpleChunk;
-	void *ether_start;
+	void *obj;/*which obj the chun belongs to*/
 }SCTP_simple_chunk_wrapper;
 
 typedef struct __pr_stream_data

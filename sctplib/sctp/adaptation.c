@@ -469,6 +469,23 @@ static int sctpv6_sfd = -1;
 
 static struct event_cb *event_callbacks[NUM_FDS];
 
+/*get an obj from dpdk mempool
+ *@return 0 for success, < 0 for error*/
+int adl_mempool_get(void **obj_p)
+{
+	int ret = rte_mempool_get(adl_message_pool, obj_p);
+	if(ret < 0)
+		error_logi(ERROR_FATAL, "adl_mempool_get:%s", strerror(0 - ret));
+	if(*obj_p == NULL)
+	  ret = -1;
+	return ret;
+}
+
+void adl_mempool_put(void *obj)
+{
+	rte_mempool_put(adl_message_pool, obj);
+}
+
 /**
  *  converts address-string (hex for ipv6, dotted decimal for ipv4
  *  to a sockunion structure

@@ -100,6 +100,8 @@ void adl_get_sctp_rings(struct rte_ring* rr, struct rte_ring* rr1, struct rte_ri
 gint adl_get_sctpv6_socket(void);
 #endif
 
+int adl_mempool_get(void **obj_p);
+void adl_mempool_put(void *obj);
 /**
  * function to be called when we get a message from a peer sctp instance in the poll loop
  * @param  sr the dpdk ring where data can be read...

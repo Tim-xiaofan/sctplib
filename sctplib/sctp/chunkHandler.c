@@ -86,7 +86,7 @@ isValidChunk(ChunkID chunkID)
 {
 	if(chunks[chunkID] == NULL || 
 				chunks[chunkID]->simpleChunk == NULL ||
-				chunks[chunkID]->ether_start == NULL)
+				chunks[chunkID]->obj == NULL)
         return FALSE;
 	else 
 		return TRUE;
@@ -451,17 +451,24 @@ static void enterChunk(SCTP_simple_chunk_wrapper * chunk_wrapper, const char *lo
 ChunkID ch_makeInit(unsigned int initTag, unsigned int rwnd, unsigned short noOutStreams,
                     unsigned short noInStreams, unsigned int initialTSN)
 {
-    SCTP_init *initChunk;
+    SCTP_simple_chunk_wrapper *initChunkWrapper;
 
     /* creat init chunk */
-    initChunk = (SCTP_init *) malloc(sizeof(SCTP_init));
+    initChunkWrapper = (SCTP_simple_chunk_wrapper *) malloc(sizeof(SCTP_simple_chunk_wrapper));
 
-    if (initChunk == NULL) error_log_sys(ERROR_FATAL, (short)errno);
+    if (initChunkWrapper == NULL) error_log_sys(ERROR_FATAL, (short)errno);
 
-    memset(initChunk, 0, sizeof(SCTP_init));
+    memset(initChunkWrapper, 0, sizeof(SCTP_simple_chunk_wrapper));
 
 
-    /* enter fixed part of init */
+    /* enter fixed part of init */	
+	void *obj = NULL;
+	if(adl_mempool_get(&obj) < 0)
+	{
+		error_log(ERROR_FATAL, "ch_makeInit:cannot get an obj");
+		return -1;
+	}
+	SCTP_init * initChunk = (SCTP_init *)obj;
     initChunk->chunk_header.chunk_id = CHUNK_INIT;
     initChunk->chunk_header.chunk_flags = 0x00;
     initChunk->chunk_header.chunk_length = sizeof(SCTP_chunk_header) + sizeof(SCTP_init_fixed);
@@ -471,7 +478,9 @@ ChunkID ch_makeInit(unsigned int initTag, unsigned int rwnd, unsigned short noOu
     initChunk->init_fixed.inbound_streams = htons(noInStreams);
     initChunk->init_fixed.initial_tsn = htonl(initialTSN);
 
-    enterChunk((SCTP_simple_chunk *) initChunk, "created init %u ");
+	initChunkWrapper->simpleChunk = (SCTP_simple_chunk *)initChunk;
+	initChunkWrapper->obj = obj;
+    enterChunk(initChunkWrapper, "created init %u ");
 
     return freeChunkID;
 }
@@ -484,16 +493,23 @@ ch_makeInitAck(unsigned int initTag,
                unsigned int rwnd,
                unsigned short noOutStreams, unsigned short noInStreams, unsigned int initialTSN)
 {
-    SCTP_init *initAckChunk = NULL;
 
-    /* creat init chunk */
-    initAckChunk = (SCTP_init *) malloc(sizeof(SCTP_init));
-    if (initAckChunk == NULL)
+    /* creat init chunk ack*/
+	SCTP_simple_chunk_wrapper *initAckChunkWrapper = NULL;
+    initAckChunkWrapper = (SCTP_simple_chunk_wrapper *) malloc(sizeof(SCTP_simple_chunk_wrapper));
+    if (initAckChunkWrapper == NULL)
         error_log_sys(ERROR_FATAL, (short)errno);
 
-    memset(initAckChunk, 0, sizeof(SCTP_init));
+    memset(initAckChunkWrapper, 0, sizeof(SCTP_init));
 
-    /* enter fixed part of init */
+    /* enter fixed part of init ack */
+	void *obj = NULL;
+	if(adl_mempool_get(&obj) < 0)
+	{
+		error_log(ERROR_FATAL, "ch_makeInitAck:cannot get an obj");
+		return -1;
+	}
+    SCTP_init *initAckChunk = (SCTP_init *)obj;
     initAckChunk->chunk_header.chunk_id = CHUNK_INIT_ACK;
     initAckChunk->chunk_header.chunk_flags = 0x00;
     initAckChunk->chunk_header.chunk_length = sizeof(SCTP_chunk_header) + sizeof(SCTP_init_fixed);
@@ -503,7 +519,9 @@ ch_makeInitAck(unsigned int initTag,
     initAckChunk->init_fixed.inbound_streams = htons(noInStreams);
     initAckChunk->init_fixed.initial_tsn = htonl(initialTSN);
 
-    enterChunk((SCTP_simple_chunk *) initAckChunk, "created initAckChunk %u ");
+	initAckChunkWrapper->simpleChunk = (SCTP_simple_chunk *)initAckChunk;
+	initAckChunkWrapper->obj = obj;
+    enterChunk(initAckChunkWrapper, "created initAckChunk %u ");
 
     return freeChunkID;
 }
@@ -1588,28 +1606,37 @@ SCTP_init_fixed *ch_initFixed(ChunkID chunkID)
  */
 ChunkID ch_makeCookie(SCTP_cookie_param * cookieParam)
 {
-    SCTP_cookie_echo *cookieChunk;
+    SCTP_simple_chunk_wrapper *cookieChunkWrapper;
 
     /* create cookie chunk */
-    cookieChunk = (SCTP_cookie_echo *) malloc(sizeof(SCTP_cookie_echo));
+    cookieChunkWrapper = (SCTP_simple_chunk_wrapper *) malloc(sizeof(SCTP_simple_chunk_wrapper));
 
-    if (cookieChunk == NULL) {
+    if (cookieChunkWrapper == NULL) {
         error_log(ERROR_MAJOR, "Malloc Failed in ch_makeCookie, returning -1 !");
         return -1;
     }
     if (cookieParam == NULL) {
         error_log(ERROR_MAJOR, "ch_makeCookie: NULL parameter passed (InitAck without Cookie ???");
-        free(cookieChunk);
+        free(cookieChunkWrapper);
         return -1;
     }
 
-    memset(cookieChunk, 0, sizeof(SCTP_cookie_echo));
-
+    memset(cookieChunkWrapper, 0, sizeof(SCTP_simple_chunk_wrapper));
+	
+	void *obj = NULL;
+	if(adl_mempool_get(&obj) < 0)
+	{
+		error_log(ERROR_FATAL, "ch_makeCookie:cannot get an obj");
+		return -1;
+	}
+	SCTP_cookie_echo *cookieChunk = (SCTP_cookie_echo *)obj;
     cookieChunk->chunk_header.chunk_id = CHUNK_COOKIE_ECHO;
     cookieChunk->chunk_header.chunk_flags = 0x00;
     cookieChunk->chunk_header.chunk_length = ntohs(cookieParam->vlparam_header.param_length);
 
-    enterChunk((SCTP_simple_chunk *) cookieChunk, "created cookieChunk %u ");
+	cookieChunkWrapper->simpleChunk = (SCTP_simple_chunk *)cookieChunk;
+	cookieChunkWrapper->obj = obj;
+    enterChunk(cookieChunkWrapper, "created cookieChunk %u ");
 
 
     /*  copy cookie parameter EXcluding param-header into chunk            */
@@ -1630,7 +1657,7 @@ ChunkID ch_makeCookie(SCTP_cookie_param * cookieParam)
  */
 ChunkID ch_cookieInitFixed(ChunkID chunkID)
 {
-    SCTP_init *initChunk;
+    SCTP_simple_chunk_wrapper *initChunkWrapper;
 
     if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
@@ -1638,19 +1665,28 @@ ChunkID ch_cookieInitFixed(ChunkID chunkID)
     }
 
     /* creat init chunk from init data< in cookie */
-    initChunk = (SCTP_init *) malloc(sizeof(SCTP_init));
-    if (initChunk == NULL)
+    initChunkWrapper = (SCTP_simple_chunk_wrapper *) malloc(sizeof(SCTP_simple_chunk_wrapper));
+    if (initChunkWrapper == NULL)
         error_log_sys(ERROR_FATAL, (short)errno);
 
-    memset(initChunk, 0, sizeof(SCTP_init));
+    memset(initChunkWrapper, 0, sizeof(SCTP_simple_chunk_wrapper));
 
     /* enter fixed part of init */
+	void *obj = NULL;
+	if(adl_mempool_get(&obj) < 0)
+	{
+		error_log(ERROR_FATAL, "ch_cookieInitFixed:cannot get an obj");
+		return -1;
+	}
+	SCTP_init * initChunk = (SCTP_init *)obj;
     initChunk->chunk_header.chunk_id = CHUNK_INIT;
     initChunk->chunk_header.chunk_flags = 0x00;
     initChunk->chunk_header.chunk_length = sizeof(SCTP_chunk_header) + sizeof(SCTP_init_fixed);
     initChunk->init_fixed = ((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.a_side_init;
 
-    enterChunk((SCTP_simple_chunk *) initChunk, "created initChunk from cookie %u ");
+	initChunkWrapper->simpleChunk =  (SCTP_simple_chunk*)initChunk;
+	initChunkWrapper->obj = obj;
+    enterChunk(initChunkWrapper, "created initChunk from cookie %u ");
 
     return freeChunkID;
 }
@@ -1661,7 +1697,7 @@ ChunkID ch_cookieInitFixed(ChunkID chunkID)
    cookie and returns its chunkID */
 ChunkID ch_cookieInitAckFixed(ChunkID chunkID)
 {
-    SCTP_init *initAckChunk;
+    SCTP_simple_chunk_wrapper *initAckChunkWrapper;
 
     if (!isValidChunk(chunkID)) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
@@ -1669,19 +1705,28 @@ ChunkID ch_cookieInitAckFixed(ChunkID chunkID)
     }
 
     /* creat initAck chunk from init data in cookie */
-    initAckChunk = (SCTP_init *) malloc(sizeof(SCTP_init));
-    if (initAckChunk == NULL)
+    initAckChunkWrapper = (SCTP_simple_chunk_wrapper *) malloc(sizeof(SCTP_simple_chunk_wrapper));
+    if (initAckChunkWrapper == NULL)
         error_log_sys(ERROR_FATAL, (short)errno);
 
-    memset(initAckChunk, 0, sizeof(SCTP_init));
+    memset(initAckChunkWrapper, 0, sizeof(SCTP_simple_chunk_wrapper));
 
     /* enter fixed part of init */
+	void *obj = NULL;
+	if(adl_mempool_get(&obj) < 0)
+	{
+		error_log(ERROR_FATAL, "ch_cookieInitAckFixed:cannot get an obj");
+		return -1;
+	}
+	SCTP_init *initAckChunk = (SCTP_init *)obj;
     initAckChunk->chunk_header.chunk_id = CHUNK_INIT_ACK;
     initAckChunk->chunk_header.chunk_flags = 0x00;
     initAckChunk->chunk_header.chunk_length = sizeof(SCTP_chunk_header) + sizeof(SCTP_init_fixed);
     initAckChunk->init_fixed = ((SCTP_cookie_echo *) chunks[chunkID]->simpleChunk)->cookie.z_side_initAck;
 
-    enterChunk((SCTP_simple_chunk *) initAckChunk, "created initAckChunk %u  from cookie");
+    initAckChunkWrapper->simpleChunk = (SCTP_simple_chunk *)initAckChunk;
+	initAckChunkWrapper->obj = obj;
+	enterChunk(initAckChunkWrapper, "created initAckChunk %u  from cookie");
 
     return freeChunkID;
 }
@@ -1920,18 +1965,26 @@ boolean ch_goodCookie(ChunkID chunkID)
 ChunkID ch_makeHeartbeat(unsigned int sendingTime, unsigned int pathID)
 {
 
-    SCTP_heartbeat *heartbeatChunk;
+    SCTP_simple_chunk_wrapper *heartbeatChunkWrapper;
     unsigned char * key;
     int i;
     MD5_CTX ctx;
 
     /* creat Heartbeat chunk */
-    heartbeatChunk = (SCTP_heartbeat *) malloc(sizeof(SCTP_simple_chunk));
-    if (heartbeatChunk == NULL)
+    heartbeatChunkWrapper = (SCTP_simple_chunk_wrapper *) malloc(sizeof(SCTP_simple_chunk_wrapper));
+    if (heartbeatChunkWrapper == NULL)
         error_log_sys(ERROR_FATAL, (short)errno);
 
-    memset(heartbeatChunk, 0, sizeof(SCTP_simple_chunk));
+    memset(heartbeatChunkWrapper, 0, sizeof(SCTP_simple_chunk_wrapper));
 
+
+	void *obj = NULL;
+	if(adl_mempool_get(&obj) < 0)
+	{
+		error_log(ERROR_FATAL, "ch_makeHeartbeat:cannot get an obj");
+		return -1;
+	}
+	SCTP_heartbeat *heartbeatChunk = (SCTP_heartbeat *)obj;
     heartbeatChunk->chunk_header.chunk_id = CHUNK_HBREQ;
     heartbeatChunk->chunk_header.chunk_flags = 0;
     heartbeatChunk->chunk_header.chunk_length = sizeof(SCTP_heartbeat);
@@ -1954,8 +2007,10 @@ ChunkID ch_makeHeartbeat(unsigned int sendingTime, unsigned int pathID)
                       heartbeatChunk->hmac[i * 4], heartbeatChunk->hmac[i * 4 + 1],
                       heartbeatChunk->hmac[i * 4 + 2], heartbeatChunk->hmac[i * 4 + 3]);
     }
-
-    enterChunk((SCTP_simple_chunk *) heartbeatChunk, "created heartbeatChunk %u ");
+	
+	heartbeatChunkWrapper->simpleChunk = (SCTP_simple_chunk *)heartbeatChunk;
+	heartbeatChunkWrapper->obj = obj;
+    enterChunk((SCTP_simple_chunk_wrapper *) heartbeatChunk, "created heartbeatChunk %u ");
 
     return freeChunkID;
 }
@@ -2070,20 +2125,29 @@ unsigned int ch_HBpathID(ChunkID chunkID)
 */
 ChunkID ch_makeSimpleChunk(unsigned char chunkType, unsigned char flag)
 {
-    SCTP_simple_chunk *simpleChunk;
+    SCTP_simple_chunk_wrapper *simpleChunkWrapper;
 
     /* creat simple chunk (used for abort, shutdownAck and cookieAck) */
-    simpleChunk = (SCTP_simple_chunk *) malloc(sizeof(SCTP_simple_chunk));
-    if (simpleChunk == NULL)
+    simpleChunkWrapper = (SCTP_simple_chunk_wrapper *) malloc(sizeof(SCTP_simple_chunk_wrapper));
+    if (simpleChunkWrapper == NULL)
         error_log_sys(ERROR_FATAL, (short)errno);
 
-    memset(simpleChunk, 0, sizeof(SCTP_simple_chunk));
+    memset(simpleChunkWrapper, 0, sizeof(SCTP_simple_chunk_wrapper));
 
+	void *obj = NULL;
+	if(adl_mempool_get(&obj) < 0)
+	{
+		error_log(ERROR_FATAL, "ch_makeSimpleChunk: cannot get an obj");
+		return -1;
+	}
+	SCTP_simple_chunk *simpleChunk = (SCTP_simple_chunk *)obj;
     simpleChunk->chunk_header.chunk_id = chunkType;
     simpleChunk->chunk_header.chunk_flags = flag;
     simpleChunk->chunk_header.chunk_length = 0x0004;
 
-    enterChunk(simpleChunk, "created simpleChunk %u ");
+	simpleChunkWrapper->simpleChunk = simpleChunk;
+	simpleChunkWrapper->obj = (void *)simpleChunk;
+	enterChunk(simpleChunkWrapper, "created simpleChunk %u ");
 
     return freeChunkID;
 }
@@ -2095,21 +2159,30 @@ ChunkID ch_makeSimpleChunk(unsigned char chunkType, unsigned char flag)
 ChunkID
 ch_makeErrorChunk(void)
 {
-    SCTP_error_chunk *errorChunk;
+    SCTP_simple_chunk_wrapper *errorChunkWrapper;
 
-    /* creat init chunk */
-    errorChunk = (SCTP_error_chunk *) malloc(sizeof(SCTP_error_chunk));
+    /* creat error chunk */
+    errorChunkWrapper = (SCTP_simple_chunk_wrapper *) malloc(sizeof(SCTP_simple_chunk_wrapper));
 
-    if (errorChunk == NULL) error_log_sys(ERROR_FATAL, (short)errno);
+    if (errorChunkWrapper == NULL) error_log_sys(ERROR_FATAL, (short)errno);
 
-    memset(errorChunk, 0, sizeof(SCTP_error_chunk));
+    memset(errorChunkWrapper, 0, sizeof(SCTP_simple_chunk_wrapper));
 
-    /* enter fixed part of init */
+	void *obj = NULL;
+	if(adl_mempool_get(&obj) < 0)
+	{
+		error_log(ERROR_FATAL, "ch_makeErrorChunk:cannot get an obj");
+		return -1;
+	}
+    /* enter fixed part of error */
+	SCTP_simple_chunk *errorChunk = (SCTP_simple_chunk *)obj;
     errorChunk->chunk_header.chunk_id = CHUNK_ERROR;
     errorChunk->chunk_header.chunk_flags = 0x00;
     errorChunk->chunk_header.chunk_length = sizeof(SCTP_chunk_header);
-
-    enterChunk((SCTP_simple_chunk *) errorChunk, "created errorChunk %u ");
+    
+	errorChunkWrapper->simpleChunk = errorChunk;
+	errorChunkWrapper->obj = (void*)errorChunk;
+	enterChunk((SCTP_simple_chunk_wrapper*) errorChunkWrapper, "created errorChunk %u ");
 
     return freeChunkID;
 }
@@ -2283,23 +2356,31 @@ unsigned int ch_stalenessOfCookieError(ChunkID chunkID)
 */
 ChunkID ch_makeShutdown(unsigned int _cummTSNacked)
 {
-    SCTP_simple_chunk *shutdown_chunk;
+    SCTP_simple_chunk_wrapper *shutdown_chunk_wrapper;
     unsigned int *cummTSNacked;
 
     /* creat Shutdown chunk */
-    shutdown_chunk = (SCTP_simple_chunk *) malloc(sizeof(SCTP_simple_chunk));
-    if (shutdown_chunk == NULL)
+    shutdown_chunk_wrapper = (SCTP_simple_chunk_wrapper *) malloc(sizeof(SCTP_simple_chunk_wrapper));
+    if (shutdown_chunk_wrapper == NULL)
         error_log_sys(ERROR_FATAL, (short)errno);
-
-    memset(shutdown_chunk, 0, sizeof(SCTP_simple_chunk));
+    memset(shutdown_chunk_wrapper, 0, sizeof(SCTP_simple_chunk));
+	
+	void *obj = NULL;
+	if(adl_mempool_get(&obj) <0)
+	{
+	  error_log(ERROR_FATAL, "ch_makeShutdown: cannot get an obj!");
+	  return -1;
+	}
+	SCTP_simple_chunk *shutdown_chunk = (SCTP_simple_chunk *)obj;
 
     shutdown_chunk->chunk_header.chunk_id = CHUNK_SHUTDOWN;
     shutdown_chunk->chunk_header.chunk_flags = 0x00;
     shutdown_chunk->chunk_header.chunk_length = 0x0008;
     cummTSNacked = (unsigned int *) (&(shutdown_chunk->simple_chunk_data[0]));
     *cummTSNacked = htonl(_cummTSNacked);
-
-    enterChunk(shutdown_chunk, "created shutdown_chunk %u ");
+	shutdown_chunk_wrapper->simpleChunk = shutdown_chunk;
+	shutdown_chunk_wrapper->obj = (void *)shutdown_chunk;
+    enterChunk(shutdown_chunk_wrapper, "created shutdown_chunk %u ");
 
     return freeChunkID;
 }
@@ -2314,7 +2395,7 @@ unsigned int ch_cummulativeTSNacked(ChunkID chunkID)
     unsigned int *cummTSNacked;
 
     if (chunks[chunkID]->simpleChunk == NULL || 
-				chunks[chunkID]->ether_start) {
+				chunks[chunkID]->obj) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return 0;
     }
@@ -2366,7 +2447,7 @@ unsigned short ch_chunkLength(ChunkID chunkID)
 SCTP_simple_chunk *ch_chunkString(ChunkID chunkID)
 {
     if (chunks[chunkID]->simpleChunk == NULL ||
-				chunks[chunkID]->ether_start == NULL) {
+				chunks[chunkID]->obj == NULL) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return NULL;
     }
@@ -2395,7 +2476,7 @@ ChunkID ch_makeChunk(SCTP_simple_chunk * chunk)
 	SCTP_simple_chunk_wrapper *tmp = 
 		(SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
 	tmp->simpleChunk = chunk;
-	tmp->ether_start = adl_get_ether_beginning();
+	tmp->obj = adl_get_ether_beginning();
     enterChunk(tmp, "created chunk from string %u ");
 
     return freeChunkID;
@@ -2411,9 +2492,11 @@ void ch_deleteChunk(ChunkID chunkID)
 
     cid = chunkID;
 
-    if (chunks[chunkID] != NULL) {
+    if (!isValidChunk(chunkID)) {
         event_logi(INTERNAL_EVENT_0, "freed chunk %u", cid);
-        free(chunks[chunkID]);
+		chunks[chunkID]->simpleChunk = NULL;
+        adl_mempool_put(chunks[chunkID]->obj);
+		free(chunks[chunkID]);
         chunks[chunkID] = NULL;
     } else {
         error_log(ERROR_MAJOR, "chunk already freed");
@@ -2437,9 +2520,9 @@ void ch_forgetChunk(ChunkID chunkID)
     cid = chunkID;
 
     if (chunks[chunkID]->simpleChunk != NULL &&
-				chunks[chunkID]->ether_start != NULL) {
+				chunks[chunkID]->obj != NULL) {
         chunks[chunkID]->simpleChunk = NULL;
-		chunks[chunkID]->ether_start = NULL;
+		chunks[chunkID]->obj = NULL;
         event_logi(INTERNAL_EVENT_0, "forgot chunk %u", cid);
     } else {
         error_log(ERROR_MAJOR, "chunk already forgotten");
