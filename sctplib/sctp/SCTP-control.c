@@ -648,7 +648,7 @@ void scu_abort(short error_type, unsigned short error_param_length, unsigned cha
  * if no TCB A' create it and send the init-chunk to cell B
  * @param init  pointer to the received init-chunk (including optional parameters)
  */
-int sci_init(ChunkID initCID)
+static int sci_init(ChunkID initCID)
 {
     /*  this function does not expect any data allocated for the new association,
        but if there are, implementation will act according to section 5.2.1 (simultaneous
@@ -969,8 +969,6 @@ int sctlr_init(SCTP_init * init)
     return return_state;
 }
 
-
-
 /**
  * sctlr_initAck is called by bundling when a init acknowledgement was received from the peer.
  * The following data are retrieved from the init-data and saved for this association:
@@ -1057,7 +1055,7 @@ gboolean sctlr_initAck(SCTP_init * initAck)
             return return_state;
         }
 
-		/*addrs in INIT ACK and src addr is association A' dest addr*/
+		/*addrs in INIT ACK and src addr is TCB A' dest addr*/
         result = mdi_readLastInstanceFromAddress(&destAddress);
         if (result != 0) {
             if (localData->initTimer != 0) {
@@ -1124,8 +1122,6 @@ gboolean sctlr_initAck(SCTP_init * initAck)
             localData = NULL;
             return return_state;
         }
-		/*store for retransmissions later*/
-        localData->cookieChunk = (SCTP_cookie_echo *) ch_chunkString(cookieCID);
         /* populate tie tags -> section 5.2.1/5.2.2 */
         localData->local_tie_tag = mdi_readLocalTag();
         localData->peer_tie_tag = ch_initiateTag(initAckCID);
@@ -1141,8 +1137,10 @@ gboolean sctlr_initAck(SCTP_init * initAck)
 		bu_put_Ctrl_Chunk((SCTP_simple_chunk*)initAck, NULL);
 		mdi_setSeletedSendRing(mdi_readAnotherInstanceSendRing());
 		bu_sendAllChunks(NULL);
+		event_log(INTERNAL_EVENT_0, "event:INIT ACK FWD!");
 		bu_unlock_sender(NULL);
         ch_forgetChunk(cookieCID);
+		ch_deleteChunk(cookieCID);
         ch_forgetChunk(initAckCID);
         break;
 
@@ -1169,11 +1167,44 @@ gboolean sctlr_initAck(SCTP_init * initAck)
     return return_state;
 }
 
-/*fwd a cookie_echo*/
-void sci_cookie_echo(SCTP_cookie_echo * cookie_echo)
+/*TCB A' a cookie_echo to cell B*/
+static int sci_cookie_echo(SCTP_controlData *sctpControl)
 {
+	/* send cookie back to the address where we got it from*/
+	if(sctpControl == NULL)
+	{
+		error_log(ERROR_FATAL, "sci_cookie_echo:cannot send cookie_echo to cell B");
+		return -1;
+	}
+	else if(sctpControl->cookie_echo == NULL)
+	{
+		error_log(ERROR_FATAL, "sci_cookie_echo:no cookie_echo to send to cell B");
+		return -1;
+	}
+	/*向前转发即可，选择报文实际目的地址转发即可*/
+	int result = mdi_readLastDestAddress(&destAddress);
+	int index;
+	for (index = 0; index < ndAddresses; index++)
+	  if (adl_equal_address(&(dAddresses[index]),&destAddress)) break;
 
+	/* send cookie */
+	bu_put_Ctrl_Chunk((SCTP_simple_chunk *) localData->cookieChunk, &index);
+	if (errorCID != 0) {
+		bu_put_Ctrl_Chunk((SCTP_simple_chunk *)ch_chunkString(errorCID), &index);
+		ch_deleteChunk(errorCID);
+	}
+
+	bu_sendAllChunks(&index);
+	bu_unlock_sender(&index);
+	event_logi(INTERNAL_EVENT_1, "event: sent cookie echo to PATH %u", index);
+
+	if (preferredSet == TRUE) {
+		preferredPath = mdi_getIndexForAddress(&preferredPrimary);
+		if (preferredPath != -1)
+		  pm_setPrimaryPath(preferredPath);
+	}
 }
+
 /**
   sctlr_cookie_echo is called by bundling when a cookie echo chunk was received from  the peer.
   The following data is retrieved from the cookie and saved for this association:
@@ -1250,6 +1281,7 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
 					TCBA_sctpControl->initChunk, TCBA_sctpControl->initAck);
 		return;
 	}
+	TCBA_sctpControl->cookieChunk = cookie_echo;
     initCID    = ch_makeChunk((SCTP_simple_chunk *)TCBA_sctpControl->initChunk);
     initAckCID = ch_makeChunk((SCTP_simple_chunk *)TCBA_sctpControl->initAck);
 
@@ -2350,6 +2382,7 @@ void sci_associate(unsigned short noOfOutStreams,
             bu_put_Ctrl_Chunk((SCTP_simple_chunk *) (localData->initChunk), &count);
 			mdi_setSeletedSendRing(send_ring);
             bu_sendAllChunks(&count);
+			event_log(INTERNAL_EVENT_1, "sci_associate: initAck sent");
         }
 
         localData->cookieChunk = NULL;

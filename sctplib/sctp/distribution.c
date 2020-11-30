@@ -4345,7 +4345,6 @@ void mdi_queueStatusChangeNotif(int queueType, int queueId, int queueLen)
  *  @return association ID of this association, 0 in case of failures
  */
 unsigned int mdi_associatex(unsigned int SCTP_InstanceName, short initCID, void *ulp_data)
-
 {
     ENTER_LIBRARY("mdi_associatex");
     ZERO_CHECK_LIBRARY;
@@ -4835,6 +4834,14 @@ unsigned int mdi_readLocalTag(void)
     }
 }
 
+unsigned int mdi_getPathByLastFromAddress(union sockunion *lastFromAddress)
+{
+	if(lastFromAddress == NULL)
+	{
+		event_log(VVERBOSE, "mdi_getPathByLastFromAddress:null address");
+		return 0;
+	}
+}
 /* get the sctp control of TCB A' when create TCB B'*/
 void *mdi_readSctpControlOfTCBA(void)
 {

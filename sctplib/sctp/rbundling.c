@@ -417,7 +417,7 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
             event_logi(INTERNAL_EVENT_0, "*******************  Bundling received INIT chunk at %p", chunk);
             association_state = sctlr_init((SCTP_init *) chunk);
             break;
-        case CHUNK_INIT_ACK:
+        case CHUNK_INIT_ACK:/* TCB A' handles the init ack chunk, instance B forward it to cell A*/
             event_logi(INTERNAL_EVENT_0, "*******************  Bundling received INIT ACK chunk at %p", chunk);
             association_state = sctlr_initAck((SCTP_init *) chunk);
             break;
