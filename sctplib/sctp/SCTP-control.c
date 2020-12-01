@@ -94,11 +94,11 @@ typedef struct SCTP_CONTROLDATA
     /** Counter for init and cookie retransmissions */
     short initRetransCounter;
     /** pointer to the init chunk data structure (for retransmissions) */
-    SCTP_init *initChunk;
+    SCTP_simple_chunk_wrapper *initChunk;
     /** pointer to the init ack chunk data structure (for another) */
-    SCTP_init *initAck;
+    SCTP_simple_chunk_wrapper *initAck;
     /** pointer to the cookie chunk data structure (for retransmissions) */
-    SCTP_cookie_echo *cookieChunk;
+    SCTP_simple_chunk_wrapper *cookieChunk;
     /** my tie tag for cross initialization and other sick cases */
     guint32 local_tie_tag;
     /** peer's tie tag for cross initialization and other sick cases */
@@ -240,7 +240,7 @@ static void sci_timer_expired(TimerID timerID, void *associationIDvoid, void *un
 
             /* make and send shutdown again, with updated TSN (section 9.2)     */
             shutdownCID = ch_makeShutdown(rxc_read_cummulativeTSNacked());
-            bu_put_Ctrl_Chunk(ch_chunkString(shutdownCID),&primary);
+            bu_put_Ctrl_Chunk(ch_chunkString(shutdownCID)->simpleChunk,&primary);
             bu_sendAllChunks(&primary);
             ch_deleteChunk(shutdownCID);
 
@@ -273,7 +273,7 @@ static void sci_timer_expired(TimerID timerID, void *associationIDvoid, void *un
             localData->initRetransCounter++;
 
             shutdownAckCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_ACK, FLAG_NONE);
-            bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID),&primary);
+            bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID)->simpleChunk,&primary);
             bu_sendAllChunks(&primary);
             ch_deleteChunk(shutdownAckCID);
 
@@ -402,7 +402,7 @@ void scu_associate(unsigned short noOfOutStreams,
             ch_enterIPaddresses(initCID, lAddresses, nlAddresses);
 
 
-        localData->initChunk = (SCTP_init *) ch_chunkString(initCID);
+        localData->initChunk = ch_chunkString(initCID);
         ch_forgetChunk(initCID);
 
         /* send init chunk */
@@ -469,7 +469,7 @@ void scu_shutdown()
         if (readyForShutdown) {
             /* make and send shutdown */
             shutdownCID = ch_makeShutdown(rxc_read_cummulativeTSNacked());
-            bu_put_Ctrl_Chunk(ch_chunkString(shutdownCID),NULL);
+            bu_put_Ctrl_Chunk(ch_chunkString(shutdownCID)->simpleChunk,NULL);
             bu_sendAllChunks(NULL);
             ch_deleteChunk(shutdownCID);
 
@@ -590,7 +590,7 @@ void scu_abort(short error_type, unsigned short error_param_length, unsigned cha
         if (error_type >= 0) {
             sci_add_abort_error_cause(abortCID,  (unsigned short)error_type, error_param_length, error_param_data);
         }
-        bu_put_Ctrl_Chunk(ch_chunkString(abortCID),NULL);
+        bu_put_Ctrl_Chunk(ch_chunkString(abortCID)->simpleChunk,NULL);
         bu_sendAllChunks(NULL);
         bu_unlock_sender(NULL);
         /* free abort chunk */
@@ -618,7 +618,7 @@ void scu_abort(short error_type, unsigned short error_param_length, unsigned cha
             sci_add_abort_error_cause(abortCID,  (unsigned short)error_type, error_param_length,error_param_data);
         }
 
-        bu_put_Ctrl_Chunk(ch_chunkString(abortCID),NULL);
+        bu_put_Ctrl_Chunk(ch_chunkString(abortCID)->simpleChunk, NULL);
         bu_sendAllChunks(NULL);
         bu_unlock_sender(NULL);
         /* free abort chunk */
@@ -722,7 +722,18 @@ int sctlr_init(SCTP_init * init)
 
     event_log(EXTERNAL_EVENT, "sctlr_init() is executed");
 
-    initCID = ch_makeChunk((SCTP_simple_chunk *) init);
+	void *obj = adl_get_dpdk_obj();
+	SCTP_simple_chunk_wrapper *cw = (SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
+	if(cw == NULL)
+	{
+		error_logi(ERROR_FATAL, "sctlr_init:cannot alloc memory for cw %s", strerror(errno));
+        return_state = STATE_STOP_PARSING_REMOVED;
+		return return_state;
+	}
+	cw->simpleChunk = (SCTP_simple_chunk *)init;;
+	cw->obj = obj;
+
+    initCID = ch_makeChunk(cw);
 
     if (ch_chunkType(initCID) != CHUNK_INIT) {
         /* error logging */
@@ -738,7 +749,7 @@ int sctlr_init(SCTP_init * init)
         abortCID = ch_makeSimpleChunk(CHUNK_ABORT, FLAG_NONE);
         ch_enterErrorCauseData(abortCID, ECC_INVALID_MANDATORY_PARAM, 0, NULL);
 
-        bu_put_Ctrl_Chunk(ch_chunkString(abortCID),NULL);
+        bu_put_Ctrl_Chunk(ch_chunkString(abortCID)->simpleChunk,NULL);
         bu_sendAllChunks(NULL);
         /* free abort chunk */
         ch_deleteChunk(abortCID);
@@ -833,7 +844,7 @@ int sctlr_init(SCTP_init * init)
             inbound_streams = min(ch_noOutStreams(initCID), mdi_readLocalInStreams( ));
 
             /* Set length of chunk to HBO !! */
-            initCID_local = ch_makeChunk((SCTP_simple_chunk *) localData->initChunk);
+            initCID_local = ch_makeChunk(localData->initChunk);
             /* section 5.2.1 : take original parameters from first INIT chunk */
             initAckCID = ch_makeInitAck(ch_initiateTag(initCID_local),
                                         ch_receiverWindow(initCID_local),
@@ -876,7 +887,7 @@ int sctlr_init(SCTP_init * init)
             }
 
             /* send initAck */
-            bu_put_Ctrl_Chunk(ch_chunkString(initAckCID),NULL);
+            bu_put_Ctrl_Chunk(ch_chunkString(initAckCID)->simpleChunk,NULL);
             bu_sendAllChunks(NULL);
             bu_unlock_sender(NULL);
             ch_deleteChunk(initAckCID);
@@ -936,7 +947,7 @@ int sctlr_init(SCTP_init * init)
             }
 
             /* send initAck */
-            bu_put_Ctrl_Chunk(ch_chunkString(initAckCID),NULL);
+            bu_put_Ctrl_Chunk(ch_chunkString(initAckCID)->simpleChunk,NULL);
             bu_sendAllChunks(NULL);
             bu_unlock_sender(NULL);
             ch_deleteChunk(initAckCID);
@@ -945,7 +956,7 @@ int sctlr_init(SCTP_init * init)
         case SHUTDOWNACKSENT:
             /* We are supposed to discard the Init, and retransmit SHUTDOWN_ACK (9.2) */
             shutdownAckCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_ACK, FLAG_NONE);
-            bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID),NULL);
+            bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID)->simpleChunk,NULL);
             bu_sendAllChunks(NULL);
             bu_unlock_sender(NULL);
             ch_deleteChunk(shutdownAckCID);
@@ -993,10 +1004,21 @@ gboolean sctlr_initAck(SCTP_init * initAck)
     int return_state = STATE_OK;
 	
     gboolean peerSupportsPRSCTP = FALSE;
+	
+	void *obj = adl_get_dpdk_obj();
+	SCTP_simple_chunk_wrapper *cw = (SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
+	if(cw == NULL)
+	{
+		error_logi(ERROR_FATAL, "pm_heartbeatAck:cannot alloc memory for cw %s", strerror(errno));
+        return_state = STATE_STOP_PARSING_REMOVED;
+		return return_state;
+	}
+	cw->simpleChunk = (SCTP_simple_chunk *)initAck;
+	cw->obj = obj;
 
-    initAckCID = ch_makeChunk((SCTP_simple_chunk *) initAck);
+    initAckCID = ch_makeChunk(cw);
 	event_logii(VVERBOSE, "sctlr_initAck: got init ack chunk start[%p],obj[%p]",
-				initAck, adl_get_dpdk_obj());
+				initAck, obj);
 
     if (ch_chunkType(initAckCID) != CHUNK_INIT_ACK) {
         /* error logging */
@@ -1011,7 +1033,7 @@ gboolean sctlr_initAck(SCTP_init * initAck)
         return return_state;
     }
 	/*store init ack for TCB B'*/
-	localData->initAck = (SCTP_init *)ch_chunkString(initAckCID);	
+	localData->initAck = ch_chunkString(initAckCID);	
     state = localData->association_state;
 	switch (state) {
     case COOKIE_WAIT:
@@ -1019,10 +1041,10 @@ gboolean sctlr_initAck(SCTP_init * initAck)
         event_log(EXTERNAL_EVENT, "normal event: initAck in state COOKIE_WAIT");
         /* Set length of chunk to HBO(host byte order) !! 
 		 * retrieve INIT stored before*/
-        initCID = ch_makeChunk((SCTP_simple_chunk *) localData->initChunk);
-		printf("sctlr_initAck:INIT traceinitiateTag[%0x], statrt[%p]\n", ch_initiateTag(initCID), localData->initChunk);
-		int initAckCID1 = ch_makeChunk((SCTP_simple_chunk *) localData->initAck);
-		printf("sctlr_initAck:INIT ACK traceinitiateTag[%0x], start[%p]\n", ch_initiateTag(initAckCID1), localData->initAck);
+        initCID = ch_makeChunk(localData->initChunk);
+		printf("sctlr_initAck:INIT traceinitiateTag[%0x], statrt[%p]\n", ch_initiateTag(initCID), localData->initChunk->simpleChunk);
+		int initAckCID1 = ch_makeChunk(localData->initAck);
+		printf("sctlr_initAck:INIT ACK traceinitiateTag[%0x], start[%p]\n", ch_initiateTag(initAckCID1), localData->initAck->simpleChunk);
         ch_chunkString(initAckCID1);
 		ch_forgetChunk(initAckCID1);
         /* FIXME: check also the noPeerOutStreams <= noLocalInStreams */
@@ -1034,7 +1056,7 @@ gboolean sctlr_initAck(SCTP_init * initAck)
            /* make and send abort message */
             abortCID = ch_makeSimpleChunk(CHUNK_ABORT, FLAG_NONE);
             ch_enterErrorCauseData(abortCID, ECC_INVALID_MANDATORY_PARAM, 0, NULL);
-            bu_put_Ctrl_Chunk(ch_chunkString(abortCID),NULL);
+            bu_put_Ctrl_Chunk(ch_chunkString(abortCID)->simpleChunk,NULL);
             ch_deleteChunk(abortCID);
 
             bu_unlock_sender(NULL);
@@ -1178,7 +1200,7 @@ static int sci_cookie_echo(ChunkID cookieCID)
 		return -1;
 	}
 	/*向前转发即可，选择报文实际目的地址转发即可*/
-	sctpControl->cookieChunk = (SCTP_cookie_echo *)ch_chunkString(cookieCID);
+	sctpControl->cookieChunk = ch_chunkString(cookieCID);
 	if(sctpControl->cookieChunk == NULL)
 	{
 		error_log(ERROR_FATAL, "sci_cookie_echo:no cookie_echo to cell B");
@@ -1205,7 +1227,7 @@ static int sci_cookie_echo(ChunkID cookieCID)
 	{
 		case COOKIE_WAIT:
 			event_log(EXTERNAL_EVENT, "event: fwd cookie echo in state COOKIE_WAIT");
-			bu_put_Ctrl_Chunk((SCTP_simple_chunk *) sctpControl->cookieChunk, &path);
+			bu_put_Ctrl_Chunk(sctpControl->cookieChunk->simpleChunk, &path);
 			bu_sendAllChunks(&path);
 			bu_unlock_sender(&path);
 			event_logi(INTERNAL_EVENT_1, "event: sent cookie echo to PATH %u", path);
@@ -1275,7 +1297,17 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
 	event_logii(VVERBOSE, "sctlr_cookie_echo: got cookie_echo chunk start[%p],obj[%p]",
 				cookie_echo, adl_get_dpdk_obj());
 	/*store the chunk into chunklist*/
-    cookieCID = ch_makeChunk((SCTP_simple_chunk *) cookie_echo);
+	void *obj = adl_get_dpdk_obj();
+	SCTP_simple_chunk_wrapper *cw = (SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
+	if(cw == NULL)
+	{
+		error_logi(ERROR_FATAL, "pm_heartbeatAck:cannot alloc memory for cw %s", strerror(errno));
+		return;
+	}
+	cw->simpleChunk = (SCTP_simple_chunk *)cookie_echo;
+	cw->obj = obj;
+
+    cookieCID = ch_makeChunk(cw);
     if (ch_chunkType(cookieCID) != CHUNK_COOKIE_ECHO) {
         /* error logging */
         ch_forgetChunk(cookieCID);
@@ -1302,8 +1334,8 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
 					TCBA_sctpControl->initChunk, TCBA_sctpControl->initAck);
 		return;
 	}
-    initCID    = ch_makeChunk((SCTP_simple_chunk *)TCBA_sctpControl->initChunk);
-    initAckCID = ch_makeChunk((SCTP_simple_chunk *)TCBA_sctpControl->initAck);
+    initCID    = ch_makeChunk(TCBA_sctpControl->initChunk);
+    initAckCID = ch_makeChunk(TCBA_sctpControl->initAck);
 
     cookie_remote_tag = ch_initiateTag(initCID);
     cookie_local_tag  = ch_initiateTag(initAckCID);
@@ -1504,7 +1536,7 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
                 /* make cookie acknowledgement */
                 cookieAckCID = ch_makeSimpleChunk(CHUNK_COOKIE_ACK, FLAG_NONE);
                 /* send cookie acknowledgement */
-                bu_put_Ctrl_Chunk(ch_chunkString(cookieAckCID),NULL);
+                bu_put_Ctrl_Chunk(ch_chunkString(cookieAckCID)->simpleChunk,NULL);
                 bu_sendAllChunks(NULL);
                 bu_unlock_sender(NULL);
                 ch_deleteChunk(cookieAckCID);
@@ -1554,7 +1586,7 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
                 /* make cookie acknowledgement */
                 cookieAckCID = ch_makeSimpleChunk(CHUNK_COOKIE_ACK, FLAG_NONE);
                 /* send cookie acknowledgement */
-                bu_put_Ctrl_Chunk(ch_chunkString(cookieAckCID),NULL);
+                bu_put_Ctrl_Chunk(ch_chunkString(cookieAckCID)->simpleChunk,NULL);
                 bu_sendAllChunks(NULL);
                 bu_unlock_sender(NULL);
                 ch_deleteChunk(cookieAckCID);
@@ -1597,7 +1629,7 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
                         /* make cookie acknowledgement */
                         cookieAckCID = ch_makeSimpleChunk(CHUNK_COOKIE_ACK, FLAG_NONE);
                         /* send cookie acknowledgement */
-                        bu_put_Ctrl_Chunk(ch_chunkString(cookieAckCID),NULL);
+                        bu_put_Ctrl_Chunk(ch_chunkString(cookieAckCID)->simpleChunk,NULL);
                         bu_sendAllChunks(NULL);
                         bu_unlock_sender(NULL);
                         ch_deleteChunk(cookieAckCID);
@@ -1618,10 +1650,10 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
                     /* resend SHUTDOWN_ACK */
                     shutdownAckCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_ACK, FLAG_NONE);
                     /* add ERROR_CHUNK with Error Cause : "Cookie Received while shutting down" */
-                    bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID),NULL);
+                    bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID)->simpleChunk,NULL);
                     errorCID = ch_makeErrorChunk();
                     ch_enterErrorCauseData(errorCID, ECC_COOKIE_RECEIVED_DURING_SHUTDWN, 0, NULL);
-                    bu_put_Ctrl_Chunk(ch_chunkString(errorCID),NULL);
+                    bu_put_Ctrl_Chunk(ch_chunkString(errorCID)->simpleChunk,NULL);
                     /* send cookie acknowledgement */
                     bu_sendAllChunks(NULL);
                     bu_unlock_sender(NULL);
@@ -1676,7 +1708,17 @@ void sctlr_cookieAck(SCTP_simple_chunk * cookieAck)
     ChunkID cookieAckCID;
     int SendCommUpNotif = -1;
 
-    cookieAckCID = ch_makeChunk(cookieAck);
+	void *obj = adl_get_dpdk_obj();
+	SCTP_simple_chunk_wrapper *cw = (SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
+	if(cw == NULL)
+	{
+		error_logi(ERROR_FATAL, "pm_heartbeatAck:cannot alloc memory for cw %s", strerror(errno));
+		return;
+	}
+	cw->simpleChunk = cookieAck;
+	cw->obj = obj;
+
+    cookieAckCID = ch_makeChunk(cw);
 
     if (ch_chunkType(cookieAckCID) != CHUNK_COOKIE_ACK) {
         /* error logging */
@@ -1754,7 +1796,18 @@ int sctlr_shutdown(SCTP_simple_chunk * shutdown_chunk)
     ChunkID shutdownAckCID;
     ChunkID shutdownCID;
 
-    shutdownCID = ch_makeChunk(shutdown_chunk);
+	void *obj = adl_get_dpdk_obj();
+	SCTP_simple_chunk_wrapper *cw = (SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
+	if(cw == NULL)
+	{
+		error_logi(ERROR_FATAL, "pm_heartbeatAck:cannot alloc memory for cw %s", strerror(errno));
+        return_state = STATE_STOP_PARSING_REMOVED;
+		return return_state;
+	}
+	cw->simpleChunk = shutdown_chunk;
+	cw->obj = obj;
+
+    shutdownCID = ch_makeChunk(cw);
 
     if (ch_chunkType(shutdownCID) != CHUNK_SHUTDOWN) {
         /* error logging */
@@ -1779,7 +1832,7 @@ int sctlr_shutdown(SCTP_simple_chunk * shutdown_chunk)
     case CLOSED:
         event_log(EXTERNAL_EVENT, "event: sctlr_shutdown in state CLOSED, send ABORT ! ");
         abortCID = ch_makeSimpleChunk(CHUNK_ABORT, FLAG_NO_TCB);
-        bu_put_Ctrl_Chunk(ch_chunkString(abortCID),&lastFromPath);
+        bu_put_Ctrl_Chunk(ch_chunkString(abortCID)->simpleChunk, &lastFromPath);
         bu_sendAllChunks(&lastFromPath);
 		bu_unlock_sender(&lastFromPath);
         ch_deleteChunk(abortCID);
@@ -1819,7 +1872,7 @@ int sctlr_shutdown(SCTP_simple_chunk * shutdown_chunk)
             /* send shutdownAck */
             event_log(VERBOSE, "We are ready for SHUTDOWN, sending SHUTDOWN_ACK !");
             shutdownAckCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_ACK, FLAG_NONE);
-            bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID),&lastFromPath);
+            bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID)->simpleChunk, &lastFromPath);
             bu_sendAllChunks(&lastFromPath);
             ch_deleteChunk(shutdownAckCID);
             if (localData->initTimer != 0) sctp_stopTimer(localData->initTimer);
@@ -1847,7 +1900,7 @@ int sctlr_shutdown(SCTP_simple_chunk * shutdown_chunk)
             /* retransmissions are not necessary */
             /* send shutdownAck */
             shutdownAckCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_ACK, FLAG_NONE);
-            bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID),&lastFromPath);
+            bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID)->simpleChunk, &lastFromPath);
             bu_sendAllChunks(&lastFromPath);
             ch_deleteChunk(shutdownAckCID);
             if (localData->initTimer != 0) sctp_stopTimer(localData->initTimer);
@@ -1929,7 +1982,7 @@ int sctlr_shutdownAck()
             mdi_rewriteTagRemote(lastTag);
         }
 
-        bu_put_Ctrl_Chunk(ch_chunkString(shdcCID),&lastFromPath);
+        bu_put_Ctrl_Chunk(ch_chunkString(shdcCID)->simpleChunk,&lastFromPath);
         bu_sendAllChunks(&lastFromPath);
 		bu_unlock_sender(&lastFromPath);
         ch_deleteChunk(shdcCID);
@@ -1963,7 +2016,7 @@ int sctlr_shutdownAck()
         }
 
         shdcCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_COMPLETE, FLAG_NONE);
-        bu_put_Ctrl_Chunk(ch_chunkString(shdcCID),&lastFromPath);
+        bu_put_Ctrl_Chunk(ch_chunkString(shdcCID)->simpleChunk,&lastFromPath);
 
         bu_sendAllChunks(&lastFromPath);
         ch_deleteChunk(shdcCID);
@@ -2154,8 +2207,18 @@ void sctlr_staleCookie(SCTP_simple_chunk * error_chunk)
     guint32 state;
     ChunkID errorCID;
     ChunkID initCID;
+	
+	void *obj = adl_get_dpdk_obj();
+	SCTP_simple_chunk_wrapper *cw = (SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
+	if(cw == NULL)
+	{
+		error_logi(ERROR_FATAL, "sctlr_staleCookie:cannot alloc memory for cw %s", strerror(errno));
+		return;
+	}
+	cw->simpleChunk = error_chunk;
+	cw->obj = obj;
 
-    errorCID = ch_makeChunk((SCTP_simple_chunk *) error_chunk);
+    errorCID = ch_makeChunk(cw);
 
     if (ch_chunkType(errorCID) != CHUNK_ERROR) {
         /* error logging */
@@ -2176,13 +2239,13 @@ void sctlr_staleCookie(SCTP_simple_chunk * error_chunk)
     case COOKIE_ECHOED:
 
         /* make chunkHandler init chunk from stored init chunk string */
-        initCID = ch_makeChunk((SCTP_simple_chunk *) localData->initChunk);
+        initCID = ch_makeChunk(localData->initChunk);
 
         /* read staleness from error chunk and enter it into the cookie preserv. */
         ch_enterCookiePreservative(initCID, ch_stalenessOfCookieError(errorCID));
 
         /* resend init */
-        bu_put_Ctrl_Chunk(ch_chunkString(initCID),NULL);
+        bu_put_Ctrl_Chunk(ch_chunkString(initCID)->simpleChunk,NULL);
         bu_sendAllChunks(NULL);
         ch_forgetChunk(initCID);
 
@@ -2281,7 +2344,7 @@ void sci_allChunksAcked()
 
         /* make and send shutdown */
         shutdownCID = ch_makeShutdown(rxc_read_cummulativeTSNacked());
-        bu_put_Ctrl_Chunk(ch_chunkString(shutdownCID),NULL);
+        bu_put_Ctrl_Chunk(ch_chunkString(shutdownCID)->simpleChunk,NULL);
         bu_sendAllChunks(NULL);
         ch_deleteChunk(shutdownCID);
 
@@ -2310,7 +2373,7 @@ void sci_allChunksAcked()
 
         /* send shutdownAck */
         shutdownAckCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_ACK, FLAG_NONE);
-        bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID),NULL);
+        bu_put_Ctrl_Chunk(ch_chunkString(shutdownAckCID)->simpleChunk,NULL);
         bu_sendAllChunks(NULL);
         ch_deleteChunk(shutdownAckCID);
 
@@ -2379,14 +2442,17 @@ void sci_associate(unsigned short noOfOutStreams,
         localData->NumberOfInStreams = noOfInStreams;
         
 		/*store INIT for retransmission later*/
-        localData->initChunk = (SCTP_init *) ch_chunkString(initCID);/*HBO to NBO*/
-		printf("sci_associate:INIT traceinitiateTag[%0x], start[%p]\n", ntohl(((SCTP_init *)localData->initChunk)->init_fixed.init_tag) , localData->initChunk);
+        localData->initChunk = ch_chunkString(initCID);/*HBO to NBO*/
 		if(localData->initChunk == NULL)
 		{
 			error_log(ERROR_FATAL, "cannot keep INIT for retransmission");
 			return;
 		}
-        ch_forgetChunk(initCID);
+		printf("sci_associate:INIT traceinitiateTag[%0x], start[%p]\n", 
+					ntohl(((SCTP_init *)localData->initChunk->simpleChunk)->init_fixed.init_tag) ,
+					localData->initChunk->simpleChunk);
+        
+		ch_forgetChunk(initCID);
 
         /* send init chunk */
         for (count = 0; count < numDestAddresses; count++) {

@@ -2442,10 +2442,10 @@ unsigned short ch_chunkLength(ChunkID chunkID)
 
 /* returns a pointer to the beginning of a simple chunk.
 */
-SCTP_simple_chunk *ch_chunkString(ChunkID chunkID)
+SCTP_simple_chunk_wrapper *ch_chunkString(ChunkID chunkID)
 {
-    if (chunks[chunkID]->simpleChunk == NULL ||
-				chunks[chunkID]->obj == NULL) {
+    if (chunks[chunkID] == NULL ||
+				chunks[chunkID]->simpleChunk == NULL) {
         error_log(ERROR_MAJOR, "Invalid chunk ID");
         return NULL;
     }
@@ -2454,7 +2454,7 @@ SCTP_simple_chunk *ch_chunkString(ChunkID chunkID)
         htons((unsigned short)(chunks[chunkID]->simpleChunk->chunk_header.chunk_length + writeCursor[chunkID]));
     chunkCompleted[chunkID] = TRUE;
 
-    return chunks[chunkID]->simpleChunk;
+    return chunks[chunkID];
 }
 
 
@@ -2463,19 +2463,19 @@ SCTP_simple_chunk *ch_chunkString(ChunkID chunkID)
  * swaps length INSIDE the packet !!!!!!!!!!! Phew ! and puts chunk pointer
  * into the current array of chunks -- does not need ch_deleteChunk !!
  */
-ChunkID ch_makeChunk(SCTP_simple_chunk * chunk)
+ChunkID ch_makeChunk(SCTP_simple_chunk_wrapper* chunkWrapper)
 {
-
     /*
      * swaps length INSIDE the packet !!!!!!!!!!! Phew ! and enters chunk
      * into the current list
      */
-    chunk->chunk_header.chunk_length = ntohs(chunk->chunk_header.chunk_length);
-	SCTP_simple_chunk_wrapper *tmp = 
-		(SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
-	tmp->simpleChunk = chunk;
-	tmp->obj = adl_get_dpdk_obj();
-    enterChunk(tmp, "created chunk from string %u ");
+	if(chunkWrapper == NULL || chunkWrapper->simpleChunk == NULL)
+	{
+		 error_log(ERROR_MAJOR, "ch_makeChunk:attempt to make chunk from null chunk");
+		 return -1;
+	}
+    chunkWrapper->simpleChunk->chunk_header.chunk_length = ntohs(chunkWrapper->simpleChunk->chunk_header.chunk_length);
+	enterChunk(chunkWrapper, "created chunk wrapperr from string %u ");
 
     return freeChunkID;
 }

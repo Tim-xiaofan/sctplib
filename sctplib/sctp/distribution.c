@@ -1474,7 +1474,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
                         "mdi_receiveMsg: Found SHUTDOWN_ACK chunk, send SHUTDOWN_COMPLETE !");
             /* section 8.4.5 : return SHUTDOWN_COMPLETE with peers veri-tag and T-Bit set */
             shutdownCompleteCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_COMPLETE, FLAG_NO_TCB);
-            bu_put_Ctrl_Chunk(ch_chunkString(shutdownCompleteCID), NULL);
+            bu_put_Ctrl_Chunk(ch_chunkString(shutdownCompleteCID)->simpleChunk, NULL);
             bu_unlock_sender(NULL);
             /* should send it to last address */
             bu_sendAllChunks(NULL);
@@ -1688,7 +1688,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
                            "mdi_receive_messageAtRing: shutdownAck in state %u, send SHUTDOWN_COMPLETE ! ",
                            state);
                 shutdownCompleteCID = ch_makeSimpleChunk(CHUNK_SHUTDOWN_COMPLETE, FLAG_NO_TCB);
-                bu_put_Ctrl_Chunk(ch_chunkString(shutdownCompleteCID),NULL);
+                bu_put_Ctrl_Chunk(ch_chunkString(shutdownCompleteCID)->simpleChunk, NULL);
                 bu_sendAllChunks(NULL);
                 ch_deleteChunk(shutdownCompleteCID);
                 mdi_resetLastInfo();
@@ -1748,7 +1748,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
         } else {
             abortCID = ch_makeSimpleChunk(CHUNK_ABORT, FLAG_NONE);
         }
-        bu_put_Ctrl_Chunk(ch_chunkString(abortCID),NULL);
+        bu_put_Ctrl_Chunk(ch_chunkString(abortCID)->simpleChunk, NULL);
         /* should send it to last address */
         bu_unlock_sender(NULL);
 		mdi_setSeletedSendRing(mdi_getSendRing(recv_ring));

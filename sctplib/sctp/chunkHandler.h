@@ -312,12 +312,12 @@ unsigned short ch_chunkLength(ChunkID chunkID);
 
 /* returns a pointer to the beginning of a simple chunk.
 */
-SCTP_simple_chunk *ch_chunkString(ChunkID chunkID);
+SCTP_simple_chunk_wrapper *ch_chunkString(ChunkID chunkID);
 
 
 
 /* ch_makeChunk makes a chunk from a simple chunk, which is nearly a byte string */
-ChunkID ch_makeChunk(SCTP_simple_chunk * chunk);
+ChunkID ch_makeChunk(SCTP_simple_chunk_wrapper * chunk);
 
 
 

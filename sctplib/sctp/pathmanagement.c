@@ -485,7 +485,16 @@ void pm_heartbeatAck(SCTP_heartbeat * heartbeatChunk)
         return;
     }
 
-    heartbeatCID = ch_makeChunk((SCTP_simple_chunk *) heartbeatChunk);
+	void *obj = adl_get_dpdk_obj();
+	SCTP_simple_chunk_wrapper *cw = (SCTP_simple_chunk_wrapper *)malloc(sizeof(SCTP_simple_chunk_wrapper));
+	if(cw == NULL)
+	{
+		error_logi(ERROR_FATAL, "pm_heartbeatAck:cannot alloc memory for cw %s", strerror(errno));
+		return;
+	}
+	cw->simpleChunk = heartbeatChunk;
+	cw->obj = obj;
+    heartbeatCID = ch_makeChunk(cw);
     pathID = ch_HBpathID(heartbeatCID);
     sendingTime = ch_HBsendingTime(heartbeatCID);
     roundtripTime = pm_getTime() - sendingTime;
