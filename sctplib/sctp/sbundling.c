@@ -386,6 +386,7 @@ gint bu_sendAllChunks(guint * ad_idx)
         event_log(VERBOSE, "Sending data from global bundling buffer ");
         bu_ptr = global_buffer;
     }
+	bu_ptr->locked = FALSE;
     if (bu_ptr->locked == TRUE) {
         bu_ptr->got_send_request = TRUE;
         if (ad_idx) {

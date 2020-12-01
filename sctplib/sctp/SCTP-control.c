@@ -655,16 +655,8 @@ static int sci_init(ChunkID initCID)
        initialization) and section 5.2.2 (duplicate initialization)
      */
 
-    unsigned int state;
     union sockunion last_source;
-
-    ChunkID initCID_local;
-    ChunkID initAckCID;
-    ChunkID abortCID;
-    ChunkID shutdownAckCID;
-    unsigned short inbound_streams;
-    unsigned int supportedTypes=0, peerSupportedTypes=0;
-    int process_further, result;
+    int result;
 
     event_log(EXTERNAL_EVENT, "sci_init() is executed");
 
@@ -680,8 +672,8 @@ static int sci_init(ChunkID initCID)
 		return -1;
 	}
 
-    result = mdi_readLastInstanceFromAddress(&last_source);
-	unsigned short lastFromPort = mdi_readLastInstanceFromPort();
+    result = mdi_readLastFromAddress(&last_source);
+	unsigned short lastFromPort = mdi_readLastFromPort();
     if (result != 0) {
         event_log(EXTERNAL_EVENT, "sci_init: cannot get where the init from");
 		return -1;
@@ -762,7 +754,7 @@ int sctlr_init(SCTP_init * init)
         return return_state;
     }
 
-    result = mdi_readLastInstanceFromAddress(&last_source);
+    result = mdi_readLastFromAddress(&last_source);
     if (result != 0) {
         if ((localData = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
             mdi_clearAssociationData();
@@ -1056,7 +1048,7 @@ gboolean sctlr_initAck(SCTP_init * initAck)
         }
 
 		/*addrs in INIT ACK and src addr is TCB A' dest addr*/
-        result = mdi_readLastInstanceFromAddress(&destAddress);
+        result = mdi_readLastFromAddress(&destAddress);
         if (result != 0) {
             if (localData->initTimer != 0) {
                 sctp_stopTimer(localData->initTimer);
@@ -1133,9 +1125,9 @@ gboolean sctlr_initAck(SCTP_init * initAck)
 
 		/*do not send cookie back , still at state cookie wait*/
 		state = COOKIE_WAIT;
-		/*B' replay INIT ACK*/
+		/*B' fwd INIT ACK to replay cell A*/
+		mdi_setAssociationDataForce(0);
 		bu_put_Ctrl_Chunk((SCTP_simple_chunk*)initAck, NULL);
-		mdi_setSeletedSendRing(mdi_readAnotherInstanceSendRing());
 		bu_sendAllChunks(NULL);
 		event_log(INTERNAL_EVENT_0, "event:INIT ACK FWD!");
 		bu_unlock_sender(NULL);
@@ -1167,43 +1159,72 @@ gboolean sctlr_initAck(SCTP_init * initAck)
     return return_state;
 }
 
-/*TCB A' a cookie_echo to cell B*/
-//static int sci_cookie_echo(SCTP_controlData *sctpControl)
-//{
-//	/* send cookie back to the address where we got it from*/
-//	if(sctpControl == NULL)
-//	{
-//		error_log(ERROR_FATAL, "sci_cookie_echo:cannot send cookie_echo to cell B");
-//		return -1;
-//	}
-//	else if(sctpControl->cookie_echo == NULL)
-//	{
-//		error_log(ERROR_FATAL, "sci_cookie_echo:no cookie_echo to send to cell B");
-//		return -1;
-//	}
-//	/*向前转发即可，选择报文实际目的地址转发即可*/
-//	int result = mdi_readLastDestAddress(&destAddress);
-//	int index;
-//	for (index = 0; index < ndAddresses; index++)
-//	  if (adl_equal_address(&(dAddresses[index]),&destAddress)) break;
-//
-//	/* send cookie */
-//	bu_put_Ctrl_Chunk((SCTP_simple_chunk *) localData->cookieChunk, &index);
-//	if (errorCID != 0) {
-//		bu_put_Ctrl_Chunk((SCTP_simple_chunk *)ch_chunkString(errorCID), &index);
-//		ch_deleteChunk(errorCID);
-//	}
-//
-//	bu_sendAllChunks(&index);
-//	bu_unlock_sender(&index);
-//	event_logi(INTERNAL_EVENT_1, "event: sent cookie echo to PATH %u", index);
-//
-//	if (preferredSet == TRUE) {
-//		preferredPath = mdi_getIndexForAddress(&preferredPrimary);
-//		if (preferredPath != -1)
-//		  pm_setPrimaryPath(preferredPath);
-//	}
-//}
+/*TCB A fwd a cookie_echo to cell B as a replay to cell B's init ack */
+static int sci_cookie_echo(ChunkID cookieCID)
+{
+	/* send cookie back to the address where we got it from*/
+	guint32 state;
+	SCTP_controlData * sctpControl;
+	int result, index;
+	union sockunion destAddress;
+	
+	if ((sctpControl = (SCTP_controlData *) mdi_readSCTP_control()) == NULL) {
+        error_log(ERROR_MAJOR, "sci_cookie_echo: read SCTP-control failed");
+        return -1;
+    }
+	if(sctpControl == NULL)
+	{
+		error_log(ERROR_FATAL, "sci_cookie_echo:cannot send cookie_echo to cell B");
+		return -1;
+	}
+	/*向前转发即可，选择报文实际目的地址转发即可*/
+	sctpControl->cookieChunk = (SCTP_cookie_echo *)ch_chunkString(cookieCID);
+	if(sctpControl->cookieChunk == NULL)
+	{
+		error_log(ERROR_FATAL, "sci_cookie_echo:no cookie_echo to cell B");
+		return -1;
+	}
+	state = sctpControl->association_state;
+
+	result = mdi_readLastDestAddress(&destAddress);
+	if(result != 0)
+	{
+		error_log(ERROR_FATAL, "sci_cookie_echo: cannot get dest addr for the cookie_echo");
+		return -1;
+	}
+
+	/*get which path to send*/
+	index = mdi_getIndexForAddress(&destAddress);
+	if(index == -1)
+	{
+		error_log(ERROR_FATAL, "sci_cookie_echo: the dest addr not in current association");
+		return -1;
+	}
+	unsigned int path = (unsigned int)index;
+	switch(state)
+	{
+		case COOKIE_WAIT:
+			event_log(EXTERNAL_EVENT, "event: fwd cookie echo in state COOKIE_WAIT");
+			bu_put_Ctrl_Chunk((SCTP_simple_chunk *) sctpControl->cookieChunk, &path);
+			bu_sendAllChunks(&path);
+			bu_unlock_sender(&path);
+			event_logi(INTERNAL_EVENT_1, "event: sent cookie echo to PATH %u", path);
+			
+			state = COOKIE_ECHOED; 
+
+			if (sctpControl->initTimer != 0) sctp_stopTimer(sctpControl->initTimer);
+			/* start cookie timer */
+			sctpControl->initTimer = adl_startTimer(sctpControl->initTimerDuration, 
+						&sci_timer_expired, 
+						TIMER_TYPE_INIT, 
+						(void *) &sctpControl->associationID, NULL);
+			break;
+		default:
+			event_log(EXTERNAL_EVENT, "event: fwd cookie echo not at state COOKIE_WAIT");
+	}
+	sctpControl->association_state = state;
+	return 0;
+}
 
 /**
   sctlr_cookie_echo is called by bundling when a cookie echo chunk was received from  the peer.
@@ -1281,7 +1302,6 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
 					TCBA_sctpControl->initChunk, TCBA_sctpControl->initAck);
 		return;
 	}
-	TCBA_sctpControl->cookieChunk = cookie_echo;
     initCID    = ch_makeChunk((SCTP_simple_chunk *)TCBA_sctpControl->initChunk);
     initAckCID = ch_makeChunk((SCTP_simple_chunk *)TCBA_sctpControl->initAck);
 
@@ -1311,29 +1331,7 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
         ch_deleteChunk(initAckCID);
         return;
     }
-
-    /* section 5.2.4. 3.) */
-    //if ((cookieLifetime = ch_staleCookie(cookieCID)) > 0) {/*>0:stale*/
-    //    event_logi(EXTERNAL_EVENT, "event: staleCookie received, lifetime = %d", cookieLifetime);
-
-    //    if ((cookie_local_tag != local_tag) || (cookie_remote_tag != remote_tag)) {
-	//		event_logiiii(VVERBOSE, "sctlr_cookie_echo:cookie tag err %0x, %0x, %0x, %0x", 
-	//					cookie_local_tag, local_tag, cookie_remote_tag, remote_tag);
-    //        mdi_writeLastInitiateTag(cookie_remote_tag);
-    //        /* make and send stale cookie error */
-    //        errorCID = ch_makeSimpleChunk(CHUNK_ERROR, FLAG_NONE);
-    //        ch_enterStaleCookieError(errorCID, (unsigned int) (1.2 * cookieLifetime));
-    //        bu_put_Ctrl_Chunk(ch_chunkString(errorCID),NULL);
-    //        bu_sendAllChunks(NULL);
-    //        ch_forgetChunk(cookieCID);
-    //        ch_deleteChunk(initCID);
-    //        ch_deleteChunk(initAckCID);
-    //        ch_deleteChunk(errorCID);
-    //        return;
-    //    }                       /* ELSE : Case 5.2.4.E. Valid Cookie, unpack into a TCB */
-    //}
-
-    result = mdi_readLastInstanceFromAddress(&destAddress);
+    result = mdi_readLastFromAddress(&destAddress);
     if (result != 0) {
        error_log(ERROR_MAJOR, "sctlr_cookie_echo: mdi_readLastFromAddress failed !");
        ch_deleteChunk(initCID);
@@ -1413,6 +1411,7 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
             localData->NumberOfOutStreams, localData->NumberOfInStreams);
 
 
+		new_state = CLOSED;
         ///* make cookie acknowledgement */
         //cookieAckCID = ch_makeSimpleChunk(CHUNK_COOKIE_ACK, FLAG_NONE);
 
@@ -1429,8 +1428,20 @@ void sctlr_cookie_echo(SCTP_cookie_echo * cookie_echo)
 
         //new_state = ESTABLISHED;
 		/*donot send cookie ack*/
-		new_state = CLOSED;
-        break;
+		unsigned int assocID, oldAssocID;
+		assocID  = mdi_readAssociationIdOfTCBA();
+		if (assocID == 0)
+		{
+			error_log(ERROR_MAJOR, "sci_cookie_echo: cannot get TCB A, create when you get an INIT");
+		}
+		else 
+		{
+			oldAssocID = mdi_setAssociationDataForce(assocID);/*设值当前控制块为TCB A*/
+			if(sci_cookie_echo(cookieCID) == -1)
+				error_log(ERROR_FATAL, "sctlr_cookie_echo: cannot fwd cookie ech");
+			mdi_recoveryAssociationData(oldAssocID);
+		}
+	        break;
 
         /* For the rest of these (pathological) cases, refer to section 5.2.4 as to what to do */
 
@@ -1685,7 +1696,7 @@ void sctlr_cookieAck(SCTP_simple_chunk * cookieAck)
     switch (state) {
     case COOKIE_ECHOED:
 
-        event_logi(EXTERNAL_EVENT_X, "event: sctlr_cookieAck in state %02d", state);
+        event_log(EXTERNAL_EVENT_X, "event: sctlr_cookieAck in state COOKIE_ECHOED");
         /* stop init timer */
         if (localData->initTimer != 0) {
             sctp_stopTimer(localData->initTimer);

@@ -2490,9 +2490,14 @@ void ch_deleteChunk(ChunkID chunkID)
 
     cid = chunkID;
 
-    if (!isValidChunk(chunkID)) {
-        event_logi(INTERNAL_EVENT_0, "freed chunk %u", cid);
+    if (chunks[chunkID] != NULL) {
+		if(chunks[chunkID]->obj == NULL)
+		{
+			error_log(ERROR_MAJOR, "chunk does not have an obj");
+			return;
+		}
 		chunks[chunkID]->simpleChunk = NULL;
+        event_logi(INTERNAL_EVENT_0, "freed chunk %u", cid);
         adl_mempool_put(chunks[chunkID]->obj);
 		free(chunks[chunkID]);
         chunks[chunkID] = NULL;

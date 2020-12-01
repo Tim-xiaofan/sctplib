@@ -266,22 +266,12 @@ static unsigned int nextAssocId = 1;
 static union sockunion *lastFromAddress;
 static union sockunion *lastDestAddress;
 
-/*actully saddr and daddr of datagram*/
-static union sockunion *lastInstanceFromAddress;
-static union sockunion *lastInstanceDestAddress;
 
 static short lastFromPath;
 static unsigned short lastFromPort;
 static unsigned short lastDestPort;
 static unsigned int lastInitiateTag;
 static void *lastRecvRing;/*last recv dpdk ring*/
-
-/*actully sport, dporte and tag*/
-static unsigned short lastInstanceFromPort;
-static unsigned short lastInstanceDestPort;
-static unsigned int lastInstanceInitiateTag;
-//static unsigned int lastMatchedInitiateTag;
-//static void *lastMatchedRecvRing;/*last recv dpdk ring*/
 
 static struct rte_ring *selectedSendRing;
 /**
@@ -355,7 +345,7 @@ void *mdi_readSelectedSendRing(void);
 
 void mdi_displayInstance(SCTP_instance *i)
 {
-	event_log(EXTERNAL_EVENT, "*******************One Instance");
+	event_log(EXTERNAL_EVENT, "One Instance");
 	printf("sctpInstanceName[%u],inStreams[%u],outStreams[%u],rwnd[%d],tagLocal[%0x],local addrs[%d]:", 
 				i->sctpInstanceName, i->noOfInStreams, 
 				i->noOfOutStreams, i->default_myRwnd, 
@@ -377,7 +367,7 @@ void mdi_displayInstance(SCTP_instance *i)
 void mdi_displayInstanceList(GList *list)
 {
 	GList *gl=NULL;
-	event_log(EXTERNAL_EVENT, "*******************InstanceList");
+	event_log(EXTERNAL_EVENT, "InstanceList");
 	for(gl = list; gl; gl = gl->next)
 	{
 		SCTP_instance *tmp = (SCTP_instance *)gl->data;
@@ -415,7 +405,7 @@ void mdi_displayAssociation(Association* assoc)
 void mdi_displayAssociationList(GList *list)
 {
 	GList *gl=NULL;
-	event_log(EXTERNAL_EVENT, "*******************AssociationList");
+	event_log(EXTERNAL_EVENT, "AssociationList");
 	for(gl = list; gl; gl = gl->next)
 	{
 		Association *tmp = (Association *)gl->data;
@@ -429,7 +419,7 @@ void mdi_displaySockunionList(union sockunion *list, int len)
 {
 	int i;
 	guchar buf[64];
-	event_log(EXTERNAL_EVENT, "*******************sockunionList");
+	event_log(EXTERNAL_EVENT, "sockunionList");
 	for(i = 0; i < len; i++)
 	{
 		adl_sockunion2str(&list[i], buf, 64);
@@ -1346,10 +1336,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
         /* meaning we MUST have an instance with no fixed port */
 		//fprintf(stderr, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!%p\n", currentAssociation);
         sctpInstance = currentAssociation->sctpInstance;
-		lastInstanceFromAddress = currentAssociation->destinationAddresses;
-		lastInstanceDestAddress = currentAssociation->localAddresses;
-		lastInstanceFromPort = currentAssociation->remotePort;
-		lastInstanceDestPort = currentAssociation->localPort;
 		supportedAddressTypes = sctpInstance->supportedAddressTypes;
 		event_log(VVERBOSE, "find an association");
 		//printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
@@ -1390,10 +1376,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
 						instance1->anotherInstance = instance;
 
 						sctpInstance = instance;
-						lastInstanceFromAddress = lastFromAddress;
-						lastInstanceDestAddress = lastDestAddress;
-						lastInstanceFromPort = lastFromPort;
-						lastInstanceDestPort = lastDestPort;
 						supportedAddressTypes = sctpInstance->supportedAddressTypes;
 
 				}
@@ -1407,10 +1389,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
         } 
 		else 
 		{
-			lastInstanceFromAddress = lastFromAddress;
-			lastInstanceDestAddress = lastDestAddress;
-			lastInstanceFromPort = lastFromPort;
-			lastInstanceDestPort = lastDestPort;
             sctpInstance = result_instance;
             supportedAddressTypes = result_instance->supportedAddressTypes;
         }
@@ -1418,7 +1396,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
 
 	event_log(VVERBOSE, "mdi_receiveMsgAtRing:datagram handled by instance");
 	mdi_displayInstance(sctpInstance);
-    if (mdi_destination_address_okay_loose(lastInstanceDestAddress) == FALSE) {
+    if (mdi_destination_address_okay_loose(lastDestAddress) == FALSE) {
 			event_log(VVERBOSE, "maybe another directiong, try again");
 			event_log(VERBOSE, "mdi_receiveMsgAtRing: this packet is not for me, DISCARDING !!!");
 			mdi_resetLastInfo();
@@ -1468,7 +1446,6 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
             event_log(VERBOSE, "mdi_receiveMsg: found NO association from INIT (ACK) CHUNK");
         }
     }
-	event_logi(VERBOSE, "we found %d addrs in INIT", noOfalternativeAddresses);
 	/** check whether chunk is illegal or not (see section 3.1 of RFC 4960)
 	 * An INIT chunk MUST be the only chunk in the SCTP packet carrying it*/
     if ( ((rbu_datagramContains(CHUNK_INIT, chunkArray) == TRUE) && (chunkArray != (1 << CHUNK_INIT))) ||
@@ -1531,7 +1508,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
 
         if ((initPtr = rbu_findChunk(message->sctp_pdu, len, CHUNK_INIT)) != NULL) {
             if (sctpInstance != NULL) {
-                if (lastInstanceDestPort != sctpInstance->localPort || sctpInstance-> localPort == 0)
+                if (lastDestPort != sctpInstance->localPort || sctpInstance-> localPort == 0)
 				{
                     /* destination port is not the listening port of this this SCTP-instance. */
                     event_log(INTERNAL_EVENT_0,
@@ -1584,7 +1561,7 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
 
         } else if (rbu_datagramContains(CHUNK_COOKIE_ECHO, chunkArray) == TRUE) {
             if (sctpInstance != NULL) {
-                if (lastInstanceDestPort != sctpInstance->localPort || sctpInstance->localPort == 0) {
+                if (lastDestPort != sctpInstance->localPort || sctpInstance->localPort == 0) {
                     /* destination port is not the listening port of this this SCTP-instance. */
                     event_log(INTERNAL_EVENT_0,
                               "mdi_receiveMsgAtRing: COOKIE_ECHO ignored, dest. port does not fit");
@@ -3905,22 +3882,25 @@ int mdi_send_message(SCTP_message * message, unsigned int length, short destAddr
 
     chunk = (SCTP_simple_chunk *) & message->sctp_pdu[0];
 
-    if (currentAssociation == NULL)
+    if (currentAssociation == NULL)/*转发INIT ACK，按照收到的地址继续向前发送即可*/
 	{
         /* possible cases : initAck, no association exists yet, and OOTB packets
            use last from address as destination address */
 		/* only if the sctp-message received before contained an init-chunk */
-		memcpy(&dest_su, lastFromAddress, sizeof(union sockunion));
+		send_ring = sctpInstance->anotherInstance->send_ring;
+		memcpy(&dest_su, lastDestAddress, sizeof(union sockunion));
 		dest_ptr = &dest_su;
-		message->common_header.verification_tag = htonl(lastInitiateTag);
+		message->common_header.verification_tag = sctpInstance->tagLocal;
 		/* write invalid tag value to lastInitiateTag (reset it) */
 		lastInitiateTag = 0;
-		/* swap ports */
-		message->common_header.src_port = htons(mdi_readLastDestPort());
-		message->common_header.dest_port = htons(mdi_readLastFromPort());
-		event_logiii(VVERBOSE,
-					"mdi_send_message (I) : tag = %x, src_port = %u , dest_port = %u",
-					lastInitiateTag, mdi_readLastDestPort(), mdi_readLastFromPort());
+		/* set ports */
+		message->common_header.dest_port = htons(mdi_readLastDestPort());
+		message->common_header.src_port = htons(mdi_readLastFromPort());
+		guchar buf[64];
+		adl_sockunion2str(lastDestAddress, buf, 64);
+		event_logiiii(VVERBOSE,
+					"mdi_send_message (I) : tag = %x, src_port = %u , dest_port = %u, dest_ip = %s",
+					sctpInstance->tagLocal, mdi_readLastFromPort(), mdi_readLastDestPort(), buf);
     }
     else
 	{
@@ -3970,10 +3950,12 @@ int mdi_send_message(SCTP_message * message, unsigned int length, short destAddr
         message->common_header.src_port = htons(currentAssociation->localPort);
         message->common_header.dest_port = htons(currentAssociation->remotePort);
 
-        event_logiii(VVERBOSE,
-                     "mdi_send_message (II): tag = %x, src_port = %u , dest_port = %u",
+		guchar buf[64];
+		adl_sockunion2str(dest_ptr, buf, 64);
+        event_logiiii(VVERBOSE,
+                     "mdi_send_message (II): tag = %x, src_port = %u , dest_port = %u, dest_ip = %s",
                      ntohl(message->common_header.verification_tag),
-                     currentAssociation->localPort, currentAssociation->remotePort);
+                     currentAssociation->localPort, currentAssociation->remotePort, buf);
     }
 
     /* calculate and insert checksum */
@@ -4337,7 +4319,7 @@ unsigned int mdi_associatex(unsigned int SCTP_InstanceName, short initCID, void 
     union sockunion addressesInINIT[MAX_NUM_ADDRESSES];/* to be master's dest_addr , slave's local_addr*/
 	union sockunion last_source;
 
-    int result = mdi_readLastInstanceFromAddress(&last_source);
+    int result = mdi_readLastFromAddress(&last_source);
 	if(result != 0)
 	{
 		event_log(INTERNAL_EVENT_0, "mdi_associatex: can not get where the init from");
@@ -4820,10 +4802,33 @@ unsigned int mdi_getPathByLastFromAddress(union sockunion *lastFromAddress)
 	}
 	return 0;
 }
+
+/* get the sctp control of TCB A' when create TCB B'*/
+unsigned int mdi_readAssociationIdOfTCBA(void)
+{
+	if(sctpInstance == NULL)
+	{
+		event_log(VVERBOSE, "mdi_readAssociationIdOfTCBA:no instance to handle the datagram");
+		return 0;
+	}else if(sctpInstance->anotherInstance == NULL)
+	{
+		event_logi(VVERBOSE, "mdi_readAssociationIdOfTCBA:no anotherInstance for sctpInstance[%u]", 
+					sctpInstance->sctpInstanceName);
+		return 0;
+	}
+	Association *assoc = retrieveAssociationBySctpInstacneName(
+				sctpInstance->anotherInstance->sctpInstanceName);
+	if(assoc == NULL)
+	{
+		event_log(VVERBOSE, "mdi_readAssociationIdOfTCBA:cannot get association from sctpInstanceName");
+		return 0;
+	}
+	return assoc->assocId;
+}
+
 /* get the sctp control of TCB A' when create TCB B'*/
 void *mdi_readSctpControlOfTCBA(void)
 {
-	event_log(VVERBOSE, "mdi_readSctpControlOfTCBA is started");
 	if(sctpInstance == NULL)
 	{
 		event_log(VVERBOSE, "mdi_readSctpControlOfTCBA:no instance to handle the datagram");
@@ -4957,10 +4962,6 @@ void mdi_resetLastInfo(void)
 	lastDestPort = 0;
 	lastDestAddress = NULL;
 	lastFromAddress = NULL;
-	lastInstanceFromPort = 0;
-	lastInstanceDestPort = 0;
-	lastInstanceFromAddress = NULL;
-	lastInstanceDestAddress = NULL;
 	sctpInstance = NULL;
 	currentAssociation = NULL;
 }
@@ -5022,16 +5023,6 @@ void *mdi_readSelectedSendRing(void)
 	return (void *)selectedSendRing;
 }
 
-int mdi_readLastInstanceFromAddress(union sockunion* fromAddress)
-{
-    if (lastInstanceFromAddress == NULL) {
-        error_log(ERROR_FATAL, "mdi_readLastInstanceFromAddress: no last instance from address");
-    } else {
-        memcpy(fromAddress, lastInstanceFromAddress, sizeof(union sockunion));
-        return 0;
-    }
-    return 1;
-}
 
 int mdi_readLastFromAddress(union sockunion* fromAddress)
 {
@@ -5044,16 +5035,6 @@ int mdi_readLastFromAddress(union sockunion* fromAddress)
     return 1;
 }
 
-int mdi_readLastInstanceDestAddress(union sockunion* destAddress)
-{
-    if (lastInstanceDestAddress == NULL) {
-        error_log(ERROR_FATAL, "mdi_readLastInstanceDestAddress: no last instance dest address");
-    } else {
-        memcpy(destAddress, lastInstanceDestAddress, sizeof(union sockunion));
-        return 0;
-    }
-    return 1;
-}
 /**
  * sets the address from which the last datagramm was received (host byte order).
  * @returns  0 if successful, 1 if address could not be set !
@@ -5080,25 +5061,6 @@ short mdi_readLastFromPath(void)
     return lastFromPath;
 }
 
-unsigned short mdi_readLastInstanceFromPort(void)
-{
-    if (lastInstanceFromAddress == NULL) {
-        error_log(ERROR_MINOR, "readLastInstanceFromPort: no last instance from address");
-        return 0;
-    } else {
-        return lastInstanceFromPort;
-    }
-}
-
-unsigned short mdi_readLastInstanceDestPort(void)
-{
-    if (lastInstanceDestAddress == NULL) {
-        error_log(ERROR_MINOR, "readLastInstanceFromPort: no last instance dest address");
-        return 0;
-    } else {
-        return lastInstanceDestPort;
-    }
-}
 /**
  * read the port of the sender of the last received DG (host byte order)
  * @return the port of the sender of the last received DG (host byte order)
@@ -5135,18 +5097,6 @@ void *mdi_readLastRecvRing(void)
 	return lastRecvRing;
 }
 
-/* write the initiate tag of a-side to be used as verification tag for the initAck */
-void mdi_writeLastInstanceInitiateTag(unsigned int initiateTag)
-{
-    lastInstanceInitiateTag = initiateTag;
-}
-
-/* write the initiate tag of a-side to be used as verification tag for the initAck */
-unsigned int mdi_readLastInstanceInitiateTag(void)
-{
-    return lastInstanceInitiateTag;
-}
-/* write the initiate tag of a-side to be used as verification tag for the initAck */
 void mdi_writeLastInitiateTag(unsigned int initiateTag)
 {
     lastInitiateTag = initiateTag;
@@ -5644,20 +5594,14 @@ unsigned short mdi_clearAssociationData(void)
 
 /*force to set currentAssociation by associationID
  *@param assocID	which association is set to currentAssociation
- *@return -1 for failed*/
-int mdi_setAssociationDataForce(unsigned int assocID)
+ *@return the old one ID*/
+unsigned short mdi_setAssociationDataForce(unsigned int assocID)
 {
 	int oldAssocID = 0;
 	if(currentAssociation == NULL) oldAssocID = 0;
 	else oldAssocID = currentAssociation->assocId;
 
-	Association *association = retrieveAssociation(assocID);
-	if(association == NULL) oldAssocID = -1;
-	else
-	{
-		currentAssociation = association;
-		sctpInstance = currentAssociation->sctpInstance;
-	}
+	currentAssociation = retrieveAssociation(assocID);
 	return oldAssocID;
 }
 
@@ -5665,7 +5609,6 @@ int mdi_setAssociationDataForce(unsigned int assocID)
 void mdi_recoveryAssociationData(unsigned int oldAssocID)
 {
 	currentAssociation = retrieveAssociation(oldAssocID);
-	sctpInstance = currentAssociation->sctpInstance;
 }
 /*------------------- Functions to create and delete associations --------------------------------*/
 

@@ -936,14 +936,15 @@ int adl_send_message_at_ring(void *send_ring, void *buf, int len)
 				"AF_INET : adl_send_message_at_ring : send_ring[%s], len[%d]",
 				sr->name, len);
 	void *msg = NULL;
-	if(rte_mempool_get(adl_message_pool, &msg) < 0)
+	int ret;
+	if((ret = rte_mempool_get(adl_message_pool, &msg)) < 0)
 	{
-		error_log(ERROR_FATAL, "adl_send_message_at_ring:failed to get message buffer");
-		exit(-1);
+		error_logi(ERROR_FATAL, "adl_send_message_at_ring:failed to get message buffer", strerror(0 - ret));
+		return -1;
 	}
 	if(msg == NULL)
 	{
-		error_log(ERROR_FATAL, "adl_send_message_at_ring:failed to get message buffer");
+		error_log(ERROR_FATAL, "adl_send_message_at_ring:get message buffer but it is null");
 		return -1;
 	}
 	rte_memcpy(msg, &len, sizeof(int));

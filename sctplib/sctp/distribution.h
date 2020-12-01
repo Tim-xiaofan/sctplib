@@ -214,6 +214,7 @@ unsigned int mdi_retrieveInstanceNameByTansportAddress(unsigned short localPort,
 */
 
 void *mdi_readSctpControlOfTCBA(void);
+unsigned int mdi_readAssociationIdOfTCBA(void);
 /*
  * returns: pointer to the flow control data structure.
  *          null in case of error.
@@ -310,12 +311,6 @@ unsigned int mdi_generateStartTSN(void);
 gboolean mdi_addressListContainsLocalhost(unsigned int noOfAddresses,
                            union sockunion* addressList);
 
-int mdi_readLastInstanceFromAddress(union sockunion* fromAddress);
-int mdi_readLastInstanceDestAddress(union sockunion* destAddress);
-unsigned short mdi_readLastInstanceFromPort(void);
-unsigned short mdi_readLastInstanceDestPort(void);
-void mdi_writeLastInstanceInitiateTag(unsigned int initiateTag);
-unsigned int mdi_readLastInstanceInitiateTag(void);
 /* sets the address from which the last datagramm was received (host byte order).
     Returns 0 if successful, 1 if address could not be set !
 */
@@ -407,7 +402,7 @@ short mdi_getIndexForAddress(union sockunion* address);
             1 if the association does not exist in the list.
 */
 unsigned short mdi_setAssociationData(unsigned int associationID);
-int mdi_setAssociationDataForce(unsigned int assocID);
+unsigned short mdi_setAssociationDataForce(unsigned int assocID);
 void mdi_recoveryAssociationData(unsigned int oldAssocID);
 
 /* Clear the global association data.
