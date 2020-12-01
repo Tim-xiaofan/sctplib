@@ -407,8 +407,8 @@ short mdi_getIndexForAddress(union sockunion* address);
             1 if the association does not exist in the list.
 */
 unsigned short mdi_setAssociationData(unsigned int associationID);
-
-
+int mdi_setAssociationDataForce(unsigned int assocID);
+void mdi_recoveryAssociationData(unsigned int oldAssocID);
 
 /* Clear the global association data.
    This function must be called after the association retrieved from the list

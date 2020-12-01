@@ -101,8 +101,6 @@ typedef struct SCTPINSTANCE
     unsigned short localPort;
     /** The local tag of this instance. */
     unsigned int tagLocal;
-    /** The tag of remote side of this instance */
-    unsigned int tagRemote;
     guint16 noOfLocalAddresses;
     union sockunion *localAddressList;
     unsigned char* localAddressStrings;
@@ -342,6 +340,7 @@ newAssociation(void*  sInstance,
                 union sockunion *destinationAddressList);
 static int mdi_createInstanceByTansportAddress(
 			unsigned short localPort,
+			unsigned int tagLocal,
 			unsigned short noOfLocalAddresses,
 			union sockunion *localAddressesi,
 			void *recv_ring, void *send_ring);
@@ -356,11 +355,11 @@ void *mdi_readSelectedSendRing(void);
 
 void mdi_displayInstance(SCTP_instance *i)
 {
-	event_log(EXTERNAL_EVENT, "*******************An instance");
-	printf("sctpInstanceName[%u], inStreams[%u], outStreams[%u], rwnd[%d] local addrs[%d]:", 
+	event_log(EXTERNAL_EVENT, "*******************One Instance");
+	printf("sctpInstanceName[%u],inStreams[%u],outStreams[%u],rwnd[%d],tagLocal[%0x],local addrs[%d]:", 
 				i->sctpInstanceName, i->noOfInStreams, 
 				i->noOfOutStreams, i->default_myRwnd, 
-				i->noOfLocalAddresses);
+				i->tagLocal,i->noOfLocalAddresses);
 	int j;
 	for(j = 0; j< i->noOfLocalAddresses; j++)
 	{
@@ -368,7 +367,7 @@ void mdi_displayInstance(SCTP_instance *i)
 		adl_sockunion2str(&i->localAddressList[j], buf, 64);
 		printf("%s ", buf);
 	}
-		printf(" localPort[%u] supportedAddressTypes[%d] and send_ring[%s] recv_ring[%s]\n",
+	printf(" localPort[%u] supportedAddressTypes[%d] and send_ring[%s] recv_ring[%s]\n",
 				i->localPort, i->supportedAddressTypes,
 				((struct rte_ring *)i->send_ring)->name, 
 				((struct rte_ring *)i->recv_ring)->name);
@@ -382,21 +381,7 @@ void mdi_displayInstanceList(GList *list)
 	for(gl = list; gl; gl = gl->next)
 	{
 		SCTP_instance *tmp = (SCTP_instance *)gl->data;
-		printf("sctpInstanceName[%u], inStreams[%u] outStreams[%u] rwnd[%d] local addrs[%d]:", 
-					tmp->sctpInstanceName, tmp->noOfInStreams, 
-					tmp->noOfOutStreams, tmp->default_myRwnd, 
-					tmp->noOfLocalAddresses);
-		int i;
-		for(i = 0; i< tmp->noOfLocalAddresses; i++)
-		{
-			guchar buf[64];
-			adl_sockunion2str(&tmp->localAddressList[i], buf, 64);
-			printf("%s ", buf);
-		}
-		printf(" localPort[%u] supportedAddressTypes[%d] and send_ring[%s] recv_ring[%s]\n",
-					tmp->localPort, tmp->supportedAddressTypes,
-					((struct rte_ring *)tmp->send_ring)->name, 
-					((struct rte_ring *)tmp->recv_ring)->name);
+		mdi_displayInstance(tmp);
 	}
 }
 void mdi_displayAssociation(Association* assoc)
@@ -1379,16 +1364,14 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
 		SCTP_instance *result_instance = retrieveInstanceByTansportAddress(lastDestPort, 1, lastDestAddress);
 
         if (result_instance == NULL)
-		{/*actully not or may anothor instance*/
-			event_log(VVERBOSE, "maybe another instance, try again");
-			result_instance = retrieveInstanceByTansportAddress(lastFromPort, 1, lastFromAddress);
+		{/*没有实例处理包就创建的对应的实例*/
+			event_log(VERBOSE, "Couldn't find SCTP Instance by tansportAddress in List -> CREATE IT!");
             if(result_instance == NULL)
 			{
-				event_log(VERBOSE, "Couldn't find SCTP Instance by tansportAddress in List -> CREATE IT!");
-				int instanceID = mdi_createInstanceByTansportAddress(lastDestPort, 1, lastDestAddress, 
+				int instanceID = mdi_createInstanceByTansportAddress(lastDestPort,  lastInitiateTag, 1, lastDestAddress, 
 							recv_ring, mdi_getSendRing(recv_ring));
 				void *recv_ring1 = mdi_getAnotherRecvRing(recv_ring);
-				int instanceID1 = mdi_createInstanceByTansportAddress(lastFromPort, 1, lastFromAddress, 
+				int instanceID1 = mdi_createInstanceByTansportAddress(lastFromPort, 0, 1, lastFromAddress, 
 							recv_ring1, mdi_getSendRing(recv_ring1));
 				if(instanceID > 0 && instanceID1 > 0)
 				{
@@ -1573,10 +1556,10 @@ void mdi_receiveMessageAtRing(struct rte_ring *recv_ring, unsigned char *buffer,
             } else {    /* we do not have an instance up listening on that port-> ABORT him */
                 /*no instance, so we create one*/
 				event_log(INTERNAL_EVENT_0, "mdi_receiveMsgAtRing: got INIT Message but no instances-> SO CREATE");
-				int instanceID = mdi_createInstanceByTansportAddress(lastFromPort, 1, lastFromAddress, 
+				int instanceID = mdi_createInstanceByTansportAddress(lastFromPort, 0, 1, lastFromAddress, 
 							recv_ring, mdi_getSendRing(recv_ring));
 				void *recv_ring1 = mdi_getAnotherRecvRing(recv_ring);
-				int instanceID1 = mdi_createInstanceByTansportAddress(lastDestPort, 1, lastDestAddress, 
+				int instanceID1 = mdi_createInstanceByTansportAddress(lastDestPort, 0, 1, lastDestAddress, 
 							recv_ring1, mdi_getSendRing(recv_ring1));
 				if(instanceID > 0 && instanceID1 > 0)
 					{
@@ -3912,7 +3895,8 @@ int mdi_send_message(SCTP_message * message, unsigned int length, short destAddr
     unsigned short dIdx;
     int txmit_len = 0;
     guchar hoststring[SCTP_MAX_IP_LEN];
-
+	
+	struct rte_ring *send_ring = NULL;
 
     if (message == NULL) {
         error_log(ERROR_MINOR, "mdi_send_message: no message to send !!!");
@@ -3921,36 +3905,32 @@ int mdi_send_message(SCTP_message * message, unsigned int length, short destAddr
 
     chunk = (SCTP_simple_chunk *) & message->sctp_pdu[0];
 
-    if (currentAssociation == NULL) {
+    if (currentAssociation == NULL)
+	{
         /* possible cases : initAck, no association exists yet, and OOTB packets
            use last from address as destination address */
-
-        if (lastFromAddress == NULL) {
-            error_log(ERROR_MAJOR, "mdi_send_message: lastFromAddress does not exist for initAck");
-            return 1;
-        } else {
-            /* only if the sctp-message received before contained an init-chunk */
-            memcpy(&dest_su, lastFromAddress, sizeof(union sockunion));
-            dest_ptr = &dest_su;
-            message->common_header.verification_tag = htonl(lastInitiateTag);
-            /* write invalid tag value to lastInitiateTag (reset it) */
-            lastInitiateTag = 0;
-            /* swap ports */
-            message->common_header.src_port = htons(mdi_readLastDestPort());
-            message->common_header.dest_port = htons(mdi_readLastFromPort());
-            event_logiii(VVERBOSE,
-                         "mdi_send_message (I) : tag = %x, src_port = %u , dest_port = %u",
-                         lastInitiateTag, mdi_readLastDestPort(), mdi_readLastFromPort());
-
-        }
-    } else {
-
+		/* only if the sctp-message received before contained an init-chunk */
+		memcpy(&dest_su, lastFromAddress, sizeof(union sockunion));
+		dest_ptr = &dest_su;
+		message->common_header.verification_tag = htonl(lastInitiateTag);
+		/* write invalid tag value to lastInitiateTag (reset it) */
+		lastInitiateTag = 0;
+		/* swap ports */
+		message->common_header.src_port = htons(mdi_readLastDestPort());
+		message->common_header.dest_port = htons(mdi_readLastFromPort());
+		event_logiii(VVERBOSE,
+					"mdi_send_message (I) : tag = %x, src_port = %u , dest_port = %u",
+					lastInitiateTag, mdi_readLastDestPort(), mdi_readLastFromPort());
+    }
+    else
+	{
+		send_ring = (struct rte_ring *)currentAssociation->sctpInstance->send_ring;
         if (destAddressIndex < -1 || destAddressIndex >= currentAssociation->noOfNetworks) {
             error_log(ERROR_MAJOR, "mdi_send_message: invalid destination address");
             return 1;
         }
 
-        if (destAddressIndex != -1) {
+        if (destAddressIndex != -1) {/*制定了有效的目的路径*/
             /* Use given destination address from current association */
             dest_ptr = &(currentAssociation->destinationAddresses[destAddressIndex]);
         } else { /* use last from address */
@@ -4001,7 +3981,7 @@ int mdi_send_message(SCTP_message * message, unsigned int length, short destAddr
 
     switch (sockunion_family(dest_ptr)) {
     case AF_INET:
-        txmit_len = adl_send_message_at_ring(selectedSendRing, message, length);
+        txmit_len = adl_send_message_at_ring(send_ring, message, length);
         break;
     default:
         error_log(ERROR_MAJOR, "mdi_send_message: Unsupported AF_TYPE");
@@ -4419,6 +4399,7 @@ unsigned int mdi_associatex(unsigned int SCTP_InstanceName, short initCID, void 
         }
     }
 	instance->default_myRwnd = ch_receiverWindow(initCID);
+	instance->tagLocal = ch_initiateTag(initCID);
 	if(noOfaddressesInINIT > instance->noOfLocalAddresses)
 		if(mdi_updateInstanceByAddress(instance, noOfaddressesInINIT,
 					addressesInINIT) == 0)
@@ -4443,8 +4424,15 @@ unsigned int mdi_associatex(unsigned int SCTP_InstanceName, short initCID, void 
         LEAVE_LIBRARY("mdi_associate");
         return 0;
     }
-	currentAssociation->ulp_dataptr = ulp_data;
+    assocID = currentAssociation->assocId;
+	currentAssociation->ulp_dataptr = ulp_data;	
     /* call associate at SCTP-control , send INIT*/
+	int oldAssocID = mdi_setAssociationDataForce(assocID);
+	if(oldAssocID == -1)
+	{
+		error_logi(ERROR_MAJOR, "mdi_associate: cannot set currentAssociation to %u for INIT", assocID);
+		return 0;
+	}
 	sci_associate(instance->noOfOutStreams,
 				instance->noOfInStreams,
                  instance1->localAddressList,
@@ -4452,8 +4440,7 @@ unsigned int mdi_associatex(unsigned int SCTP_InstanceName, short initCID, void 
                  withPRSCTP,
  			  initCID,
 			  instance->send_ring);
-
-    assocID = currentAssociation->assocId;
+	mdi_recoveryAssociationData(oldAssocID);
 
     LEAVE_LIBRARY("mdi_associate");
 	event_log(EXTERNAL_EVENT, "mdi_associate: new association is started");
@@ -4522,6 +4509,7 @@ int mdi_updateInstanceByAddress(SCTP_instance *instance,
 }
 static int mdi_createInstanceByTansportAddress(
 			unsigned short localPort,
+			unsigned int tagLocal,
 			unsigned short noOfLocalAddresses,
 			union sockunion *localAddressList,
 			void *recv_ring, void *send_ring)
@@ -4529,9 +4517,6 @@ static int mdi_createInstanceByTansportAddress(
     gboolean with_ipv4 = FALSE;
     unsigned short result;
     GList* list_result = NULL;
-
-    SCTP_instance *old_Instance = sctpInstance;
-    Association *old_assoc = currentAssociation;
 
     ENTER_LIBRARY("mdi_createInstanceByTansportAddress");
     ZERO_CHECK_LIBRARY;
@@ -4552,52 +4537,47 @@ static int mdi_createInstanceByTansportAddress(
     event_logi(VERBOSE, "mdi_createInstanceByTansportAddress : with_ipv4 : %s ",(with_ipv4==TRUE)?"TRUE":"FALSE" );
     if ((with_ipv4 != TRUE)) {
             error_log(ERROR_MAJOR, "No valid address in mdi_createInstanceByTansportAddress()");
-            sctpInstance = old_Instance;
-            currentAssociation = old_assoc;
             LEAVE_LIBRARY("mdi_createInstanceByTansportAddress");
             return SCTP_PARAMETER_PROBLEM;
     }
-    sctpInstance = (SCTP_instance *) malloc(sizeof(SCTP_instance));
-    if (!sctpInstance)
+    SCTP_instance *instance = (SCTP_instance *) malloc(sizeof(SCTP_instance));
+    if (!instance)
 	{
         error_log_sys(ERROR_MAJOR, (short)errno);
-        sctpInstance = old_Instance;
-        currentAssociation = old_assoc;
         LEAVE_LIBRARY("mdi_createInstanceByTansportAddress");
         return SCTP_OUT_OF_RESOURCES;
     }
-	sctpInstance->localPort = localPort;
-	sctpInstance->has_INADDR_ANY_set = FALSE;
-	sctpInstance->has_IN6ADDR_ANY_set = FALSE;
-	sctpInstance->uses_IPv4 = TRUE;
-	sctpInstance->uses_IPv6 = FALSE;
-	sctpInstance->supportsPRSCTP = librarySupportsPRSCTP;
-	sctpInstance->supportsADDIP = supportADDIP;
+	instance->localPort = localPort;
+	instance->tagLocal = tagLocal;
+	instance->has_INADDR_ANY_set = FALSE;
+	instance->has_IN6ADDR_ANY_set = FALSE;
+	instance->uses_IPv4 = TRUE;
+	instance->uses_IPv6 = FALSE;
+	instance->supportsPRSCTP = librarySupportsPRSCTP;
+	instance->supportsADDIP = supportADDIP;
 	/*支持的地址类型*/
-    sctpInstance->supportedAddressTypes = 0;
-    if (with_ipv4) sctpInstance->supportedAddressTypes |= SUPPORT_ADDRESS_TYPE_IPV4;
+    instance->supportedAddressTypes = 0;
+    if (with_ipv4) instance->supportedAddressTypes |= SUPPORT_ADDRESS_TYPE_IPV4;
 	
-	if(sctpInstance->has_IN6ADDR_ANY_set  == FALSE &&
-				sctpInstance->has_INADDR_ANY_set == FALSE)
+	if(instance->has_IN6ADDR_ANY_set  == FALSE &&
+				instance->has_INADDR_ANY_set == FALSE)
 	{
-		sctpInstance->localAddressList = 
+		instance->localAddressList = 
 			(union sockunion *)malloc(sizeof(union sockunion) * noOfLocalAddresses);
-		if(sctpInstance->localAddressList == NULL)
+		if(instance->localAddressList == NULL)
 		{
 			error_log_sys(ERROR_MAJOR, (short)errno);
 			return SCTP_OUT_OF_RESOURCES;
 		}
-		memcpy(sctpInstance->localAddressList, 
+		memcpy(instance->localAddressList, 
 					localAddressList, sizeof(union sockunion) * noOfLocalAddresses);
-		sctpInstance->noOfLocalAddresses = noOfLocalAddresses;
+		instance->noOfLocalAddresses = noOfLocalAddresses;
 	}
-    list_result = g_list_find_custom(InstanceList, sctpInstance, &CheckForAddressInInstance);
+    list_result = g_list_find_custom(InstanceList, instance, &CheckForAddressInInstance);
 
     if (list_result) {
-        free(sctpInstance->localAddressList);
-        free(sctpInstance);
-        sctpInstance = old_Instance;
-        currentAssociation = old_assoc;
+        free(instance->localAddressList);
+        free(instance);
         error_log(ERROR_MAJOR, "Instance already existed ! Returning error !");
         LEAVE_LIBRARY("mdi_createInstanceByTansportAddress");
         return 0;
@@ -4612,46 +4592,42 @@ static int mdi_createInstanceByTansportAddress(
 	}
     if (with_ipv4 == TRUE) {
         ipv4_users++;
-        sctpInstance->uses_IPv4 = TRUE;
+        instance->uses_IPv4 = TRUE;
     } else {
-        sctpInstance->uses_IPv4 = FALSE;
+        instance->uses_IPv4 = FALSE;
     }
 
     /*实例名（键值）*/
-    sctpInstance->sctpInstanceName = mdi_getUnusedInstanceName();
-    if(sctpInstance->sctpInstanceName == 0) {
-        sctpInstance = old_Instance;
-        currentAssociation = old_assoc;
+    instance->sctpInstanceName = mdi_getUnusedInstanceName();
+    if(instance->sctpInstanceName == 0) {
         LEAVE_LIBRARY("mdi_createInstanceByTansportAddress");
         return SCTP_OUT_OF_RESOURCES;
     }
 
     /*上层回调函数*/
-    sctpInstance->ULPcallbackFunctions = ULPcallbackFunctions;
+    instance->ULPcallbackFunctions = ULPcallbackFunctions;
 
-    sctpInstance->default_rtoInitial = RTO_INITIAL;
-    sctpInstance->default_validCookieLife = VALID_COOKIE_LIFE_TIME;
-    sctpInstance->default_assocMaxRetransmits = ASSOCIATION_MAX_RETRANS;
-    sctpInstance->default_pathMaxRetransmits = MAX_PATH_RETRANSMITS ;
-    sctpInstance->default_maxInitRetransmits = MAX_INIT_RETRANSMITS;
+    instance->default_rtoInitial = RTO_INITIAL;
+    instance->default_validCookieLife = VALID_COOKIE_LIFE_TIME;
+    instance->default_assocMaxRetransmits = ASSOCIATION_MAX_RETRANS;
+    instance->default_pathMaxRetransmits = MAX_PATH_RETRANSMITS ;
+    instance->default_maxInitRetransmits = MAX_INIT_RETRANSMITS;
     /* using the static variable defined after initialization of the adaptation layer */
-    sctpInstance->default_myRwnd = 0;
-    sctpInstance->default_delay = SACK_DELAY;
-    sctpInstance->default_ipTos = IPTOS_DEFAULT;
-    sctpInstance->default_rtoMin = RTO_MIN;
-    sctpInstance->default_rtoMax = RTO_MAX;
-    sctpInstance->default_maxSendQueue = DEFAULT_MAX_SENDQUEUE;
-    sctpInstance->default_maxRecvQueue = DEFAULT_MAX_RECVQUEUE;
-    sctpInstance->default_maxBurst = DEFAULT_MAX_BURST;
-	sctpInstance->recv_ring = recv_ring;
-	sctpInstance->send_ring = send_ring;
+    instance->default_myRwnd = 0;
+    instance->default_delay = SACK_DELAY;
+    instance->default_ipTos = IPTOS_DEFAULT;
+    instance->default_rtoMin = RTO_MIN;
+    instance->default_rtoMax = RTO_MAX;
+    instance->default_maxSendQueue = DEFAULT_MAX_SENDQUEUE;
+    instance->default_maxRecvQueue = DEFAULT_MAX_RECVQUEUE;
+    instance->default_maxBurst = DEFAULT_MAX_BURST;
+	instance->recv_ring = recv_ring;
+	instance->send_ring = send_ring;
 
-    InstanceList = g_list_insert_sorted(InstanceList, sctpInstance, &CompareInstanceNames);
+    InstanceList = g_list_insert_sorted(InstanceList, instance, &CompareInstanceNames);
 
-    result = sctpInstance->sctpInstanceName;
+    result = instance->sctpInstanceName;
 
-    sctpInstance = old_Instance;
-    currentAssociation = old_assoc;
     LEAVE_LIBRARY("mdi_createInstanceByTansportAddress");
     return (int)result;
 }                               /* end: mdi_createInstanceByTansportAddress */
@@ -4773,6 +4749,7 @@ void *mdi_readSCTP_control(void)
         error_log(ERROR_MINOR, "mdi_readSCTP_control: association not set");
         return NULL;
     }
+	event_logi(VVERBOSE, "got a sctp_control from association %u", currentAssociation->assocId);
     return currentAssociation->sctp_control;
 }
 
@@ -4841,6 +4818,7 @@ unsigned int mdi_getPathByLastFromAddress(union sockunion *lastFromAddress)
 		event_log(VVERBOSE, "mdi_getPathByLastFromAddress:null address");
 		return 0;
 	}
+	return 0;
 }
 /* get the sctp control of TCB A' when create TCB B'*/
 void *mdi_readSctpControlOfTCBA(void)
@@ -5664,7 +5642,31 @@ unsigned short mdi_clearAssociationData(void)
     return 0;
 }
 
+/*force to set currentAssociation by associationID
+ *@param assocID	which association is set to currentAssociation
+ *@return -1 for failed*/
+int mdi_setAssociationDataForce(unsigned int assocID)
+{
+	int oldAssocID = 0;
+	if(currentAssociation == NULL) oldAssocID = 0;
+	else oldAssocID = currentAssociation->assocId;
 
+	Association *association = retrieveAssociation(assocID);
+	if(association == NULL) oldAssocID = -1;
+	else
+	{
+		currentAssociation = association;
+		sctpInstance = currentAssociation->sctpInstance;
+	}
+	return oldAssocID;
+}
+
+/*the oldAssocID must be same as one that mdi_setAssociationDataForce return*/
+void mdi_recoveryAssociationData(unsigned int oldAssocID)
+{
+	currentAssociation = retrieveAssociation(oldAssocID);
+	sctpInstance = currentAssociation->sctpInstance;
+}
 /*------------------- Functions to create and delete associations --------------------------------*/
 
 
@@ -6013,6 +6015,7 @@ mdi_initAssociation(unsigned int remoteSideReceiverWindow,
     /* TODO : check number of input and output streams (although that should be fixed now) */
 
     currentAssociation->tagRemote = tagRemote;
+	currentAssociation->sctpInstance->anotherInstance->tagLocal = tagRemote;
 
     withPRSCTP =  assocSupportsPRSCTP && currentAssociation->supportsPRSCTP;
     currentAssociation->peerSupportsPRSCTP = withPRSCTP;

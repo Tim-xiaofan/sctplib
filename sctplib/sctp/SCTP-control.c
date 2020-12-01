@@ -1168,42 +1168,42 @@ gboolean sctlr_initAck(SCTP_init * initAck)
 }
 
 /*TCB A' a cookie_echo to cell B*/
-static int sci_cookie_echo(SCTP_controlData *sctpControl)
-{
-	/* send cookie back to the address where we got it from*/
-	if(sctpControl == NULL)
-	{
-		error_log(ERROR_FATAL, "sci_cookie_echo:cannot send cookie_echo to cell B");
-		return -1;
-	}
-	else if(sctpControl->cookie_echo == NULL)
-	{
-		error_log(ERROR_FATAL, "sci_cookie_echo:no cookie_echo to send to cell B");
-		return -1;
-	}
-	/*向前转发即可，选择报文实际目的地址转发即可*/
-	int result = mdi_readLastDestAddress(&destAddress);
-	int index;
-	for (index = 0; index < ndAddresses; index++)
-	  if (adl_equal_address(&(dAddresses[index]),&destAddress)) break;
-
-	/* send cookie */
-	bu_put_Ctrl_Chunk((SCTP_simple_chunk *) localData->cookieChunk, &index);
-	if (errorCID != 0) {
-		bu_put_Ctrl_Chunk((SCTP_simple_chunk *)ch_chunkString(errorCID), &index);
-		ch_deleteChunk(errorCID);
-	}
-
-	bu_sendAllChunks(&index);
-	bu_unlock_sender(&index);
-	event_logi(INTERNAL_EVENT_1, "event: sent cookie echo to PATH %u", index);
-
-	if (preferredSet == TRUE) {
-		preferredPath = mdi_getIndexForAddress(&preferredPrimary);
-		if (preferredPath != -1)
-		  pm_setPrimaryPath(preferredPath);
-	}
-}
+//static int sci_cookie_echo(SCTP_controlData *sctpControl)
+//{
+//	/* send cookie back to the address where we got it from*/
+//	if(sctpControl == NULL)
+//	{
+//		error_log(ERROR_FATAL, "sci_cookie_echo:cannot send cookie_echo to cell B");
+//		return -1;
+//	}
+//	else if(sctpControl->cookie_echo == NULL)
+//	{
+//		error_log(ERROR_FATAL, "sci_cookie_echo:no cookie_echo to send to cell B");
+//		return -1;
+//	}
+//	/*向前转发即可，选择报文实际目的地址转发即可*/
+//	int result = mdi_readLastDestAddress(&destAddress);
+//	int index;
+//	for (index = 0; index < ndAddresses; index++)
+//	  if (adl_equal_address(&(dAddresses[index]),&destAddress)) break;
+//
+//	/* send cookie */
+//	bu_put_Ctrl_Chunk((SCTP_simple_chunk *) localData->cookieChunk, &index);
+//	if (errorCID != 0) {
+//		bu_put_Ctrl_Chunk((SCTP_simple_chunk *)ch_chunkString(errorCID), &index);
+//		ch_deleteChunk(errorCID);
+//	}
+//
+//	bu_sendAllChunks(&index);
+//	bu_unlock_sender(&index);
+//	event_logi(INTERNAL_EVENT_1, "event: sent cookie echo to PATH %u", index);
+//
+//	if (preferredSet == TRUE) {
+//		preferredPath = mdi_getIndexForAddress(&preferredPrimary);
+//		if (preferredPath != -1)
+//		  pm_setPrimaryPath(preferredPath);
+//	}
+//}
 
 /**
   sctlr_cookie_echo is called by bundling when a cookie echo chunk was received from  the peer.
@@ -2331,6 +2331,7 @@ void sci_allChunksAcked()
  * The local tag and the initial TSN are randomly generated.
  * Together with the parameters of the function, they are used to create the init-message.
  * This data are also stored in a newly created association-record.
+ * 当转发INIT时，currentAssociation并不是之前newAssociation()创建的TCB A，故需要指定为TCB A
  *
  * @param noOfOutStreams        number of send streams.
  * @param noOfInStreams         number of receive streams.
@@ -2380,9 +2381,8 @@ void sci_associate(unsigned short noOfOutStreams,
         for (count = 0; count < numDestAddresses; count++) {
 			/*the length must be NBO*/
             bu_put_Ctrl_Chunk((SCTP_simple_chunk *) (localData->initChunk), &count);
-			mdi_setSeletedSendRing(send_ring);
             bu_sendAllChunks(&count);
-			event_log(INTERNAL_EVENT_1, "sci_associate: initAck sent");
+			event_log(INTERNAL_EVENT_1, "sci_associate: init -> sent");
         }
 
         localData->cookieChunk = NULL;
@@ -2408,8 +2408,6 @@ void sci_associate(unsigned short noOfOutStreams,
     localData->association_state = state;
     localData = NULL;
 }
-
-
 
 
 /**

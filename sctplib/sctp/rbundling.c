@@ -452,7 +452,7 @@ gint rbu_rcvDatagram(guint address_index, guchar * datagram, guint len)
         case CHUNK_COOKIE_ECHO:
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ECHO chunk");
             sctlr_cookie_echo((SCTP_cookie_echo *) chunk);/*create TCB B'*/
-			sci_cookie_echo((SCTP_cookie_echo *) chunk);/*TCB A' send it to cell B */
+			//sci_cookie_echo((SCTP_cookie_echo *) chunk);/*TCB A' send it to cell B */
             break;
         case CHUNK_COOKIE_ACK:
             event_log(INTERNAL_EVENT_0, "*******************  Bundling received COOKIE ACK chunk");
