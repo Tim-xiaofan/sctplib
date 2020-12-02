@@ -654,7 +654,6 @@ static int sci_init(ChunkID initCID)
        but if there are, implementation will act according to section 5.2.1 (simultaneous
        initialization) and section 5.2.2 (duplicate initialization)
      */
-
     union sockunion last_source;
     int result;
 
@@ -702,7 +701,6 @@ int sctlr_init(SCTP_init * init)
        but if there are, implementation will act according to section 5.2.1 (simultaneous
        initialization) and section 5.2.2 (duplicate initialization)
      */
-
     unsigned int state;
     guint16 nlAddresses;
     union sockunion lAddresses[MAX_NUM_ADDRESSES];
@@ -2452,12 +2450,10 @@ void sci_associate(unsigned short noOfOutStreams,
 					ntohl(((SCTP_init *)localData->initChunk->simpleChunk)->init_fixed.init_tag) ,
 					localData->initChunk->simpleChunk);
         
-		ch_forgetChunk(initCID);
-
         /* send init chunk */
         for (count = 0; count < numDestAddresses; count++) {
 			/*the length must be NBO*/
-            bu_put_Ctrl_Chunk((SCTP_simple_chunk *) (localData->initChunk), &count);
+            bu_put_Ctrl_Chunk(localData->initChunk->simpleChunk, &count);
             bu_sendAllChunks(&count);
 			event_log(INTERNAL_EVENT_1, "sci_associate: init -> sent");
         }

@@ -2522,11 +2522,9 @@ void ch_forgetChunk(ChunkID chunkID)
 
     cid = chunkID;
 
-    if (chunks[chunkID]->simpleChunk != NULL &&
-				chunks[chunkID]->obj != NULL) {
-        chunks[chunkID]->simpleChunk = NULL;
-		chunks[chunkID]->obj = NULL;
-        event_logi(INTERNAL_EVENT_0, "forgot chunk %u", cid);
+    if (chunks[chunkID] != NULL) {
+        chunks[chunkID] = NULL;
+		event_logi(INTERNAL_EVENT_0, "forgot chunk %u", cid);
     } else {
         error_log(ERROR_MAJOR, "chunk already forgotten");
     }

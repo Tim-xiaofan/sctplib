@@ -258,6 +258,11 @@ gint bu_put_Ctrl_Chunk(SCTP_simple_chunk * chunk,unsigned int * dest_index)
         bu_ptr = global_buffer;
     }
 
+	if(chunk == NULL)
+	{
+		event_log(VVERBOSE, "bu_put_Ctrl_Chunk: null chunk is put");
+		return -1;
+	}
     if (TOTAL_SIZE(bu_ptr) + CHUNKP_LENGTH((SCTP_chunk_header *) chunk) >= MAX_SCTP_PDU) {
         lock = bu_ptr->locked;
         event_logi(VERBOSE,
