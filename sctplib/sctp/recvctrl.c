@@ -457,12 +457,12 @@ int rxc_data_chunk_rx(SCTP_data_chunk * se_chk, unsigned int ad_idx)
         return (-1);
     }
 
-
     /* resetting it 默认不是的chunk*/
     rxc->new_chunk_received = FALSE;
     rxc->last_address = ad_idx;
 
     bytesQueued = se_getQueuedBytes();/*排队的字节数*/
+	event_logii(VVERBOSE, "rxc_data_chunk_rx:bytesQueued[%d], my_rwnd[%d]", bytesQueued, rxc->my_rwnd);
     if (bytesQueued < 0) bytesQueued = 0;
     if ((unsigned int)bytesQueued > rxc->my_rwnd) {
         current_rwnd = 0;
@@ -487,6 +487,8 @@ int rxc_data_chunk_rx(SCTP_data_chunk * se_chk, unsigned int ad_idx)
          (assoc_state == SHUTDOWNRECEIVED) ||
          (assoc_state == SHUTDOWNACKSENT) ) {
         /* drop chunk, if either: our rwnd is 0, or we are already shutting down */
+		
+		event_log(INTERNAL_EVENT_0, "rxc_data_chunk_rx:drop chunk, if either: our rwnd is 0, or we are already shutting down ");
         rxc->new_chunk_received = FALSE;
         return 1;
     }
@@ -499,7 +501,7 @@ int rxc_data_chunk_rx(SCTP_data_chunk * se_chk, unsigned int ad_idx)
         reported in the SACK as duplicate.
         接受到重复的DATA chunks并且没有新的DATA chunks，接收端必须马上回复一个ACK
      */
-    event_logii(VERBOSE, "rxc_data_chunk_rx : chunk_tsn==%u, chunk_len=%u", chunk_tsn, chunk_len);
+    event_logii(INTERNAL_EVENT_0, "rxc_data_chunk_rx : chunk_tsn==%u, chunk_len=%u", chunk_tsn, chunk_len);
     if (rxc_update_lowest(rxc, chunk_tsn) == TRUE) {
         /* tsn is even lower than the lowest one received so far 比最低的还低，即收到更老的chunk*/
         rxc_update_duplicates(rxc, chunk_tsn);/*更新重复列表*/

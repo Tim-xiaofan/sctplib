@@ -478,19 +478,6 @@ gint CheckForAddressInInstance(gconstpointer a, gconstpointer b)
 
 }
 
-/*本地端口相同，即为相同的SCTP Instance */
-gint CheckForAddressInInstanceWithoutLocaladdr(gconstpointer a, gconstpointer b)
-{
-    SCTP_instance* ai = (SCTP_instance*)a;
-    SCTP_instance* bi = (SCTP_instance*)b;
-
-    event_logii(VVERBOSE, "DEBUG: CheckForNotingInInstance, comparing instance a port %u, instance b port %u",
-        ai->localPort, bi->localPort);
-
-    if (ai->localPort < bi->localPort) return -1;
-    else if (ai->localPort > bi->localPort) return 1;
-	return 0;
-}
 /*two instance is equal only when
  *local port is equal && have commom local addresses*/
 gint CompareInstanceTransportAddress(gconstpointer a, gconstpointer b)
@@ -4396,22 +4383,21 @@ unsigned int mdi_associatex(unsigned int SCTP_InstanceName, short initCID, void 
 
     withPRSCTP = librarySupportsPRSCTP;
     /* Create new association TCB*/
-    if (newAssociation(instance,
+    if ((assocID = newAssociation(instance,
                            instance->localPort, /* local client port */
                            instance1->localPort, /* remote server port */
                            ch_initiateTag(initCID),
                            0,
                            (short)instance1->noOfLocalAddresses,
-                           instance1->localAddressList))
+                           instance1->localAddressList)) == 0)
 	{
         error_log(ERROR_MAJOR, "Creation of association failed");
         LEAVE_LIBRARY("mdi_associate");
         return 0;
     }
-    assocID = currentAssociation->assocId;
-	currentAssociation->ulp_dataptr = ulp_data;	
     /* call associate at SCTP-control , send INIT*/
 	int oldAssocID = mdi_setAssociationDataForce(assocID);
+	currentAssociation->ulp_dataptr = ulp_data;	
 	if(oldAssocID == -1)
 	{
 		error_logi(ERROR_MAJOR, "mdi_associate: cannot set currentAssociation to %u for INIT", assocID);
@@ -4427,7 +4413,7 @@ unsigned int mdi_associatex(unsigned int SCTP_InstanceName, short initCID, void 
 	mdi_recoveryAssociationData(oldAssocID);
 
     LEAVE_LIBRARY("mdi_associate");
-	event_log(EXTERNAL_EVENT, "mdi_associate: new association is started");
+	event_logi(EXTERNAL_EVENT, "mdi_associate: new association is started %u", assocID);
 	mdi_displayAssociationList(AssociationList);
     return assocID;
 }                               /* end: mdi_associatex */
@@ -5262,7 +5248,7 @@ unsigned short mdi_readLocalInStreams(void)
         else
             error_log(ERROR_FATAL, "lastDestAddress NULL in mdi_readLocalInStreams() - FIXME !");
 
-        result = g_list_find_custom(InstanceList, &temporary, &CheckForAddressInInstanceWithoutLocaladdr);
+        result = g_list_find_custom(InstanceList, &temporary, &CheckForAddressInInstance);
         if (result == NULL) {
             error_logi(ERROR_FATAL, "Could not find SCTP Instance for Port %u in List, FIXME !",lastDestPort);
         }
@@ -5305,7 +5291,7 @@ unsigned short mdi_readLocalOutStreams(void)
         else
             error_log(ERROR_FATAL, "lastDestAddress NULL in mdi_readLocalInStreams() - FIXME !");
 
-        result = g_list_find_custom(InstanceList, &temporary, &CheckForAddressInInstanceWithoutLocaladdr);
+        result = g_list_find_custom(InstanceList, &temporary, &CheckForAddressInInstance);
         if (result == NULL) {
             error_logi(ERROR_FATAL, "Could not find SCTP Instance for Port %u in List, FIXME !",lastDestPort);
         }
@@ -5685,7 +5671,7 @@ void mdi_recoveryAssociationData(unsigned int oldAssocID)
  *	@param	noOfLocalAddresses			number of addresses self has
  *  @param  localAddressList			pointer to the array of self's addresses
  *  @param  ms_assoc					pointer to MS_Association
- *  @return 0 for success, else 1 for failure
+ *  @return 0 for failure
  */
 static unsigned short
 newAssociation(void*  sInstance,
@@ -5702,7 +5688,7 @@ newAssociation(void*  sInstance,
             error_logi(ERROR_FATAL, 
 						"SCTP Instance for Port %u were all NULL, call mdi_createInstanceByTansportAddre FIRST !",
 						local_port);
-            return 1;
+            return 0;
        } else {
             instance = sctpInstance;
         }
@@ -5719,106 +5705,102 @@ newAssociation(void*  sInstance,
     /* Do plausi checks on the addresses. */
     if (noOfDestinationAddresses <= 0 || destinationAddressList == NULL) {
         error_log(ERROR_MAJOR, "No destination address suppllied for new association");
-        return 1;
+        return 0;
 
     } else if (primaryDestinitionAddress < 0
                  || primaryDestinitionAddress >= noOfDestinationAddresses) {
         error_log(ERROR_MAJOR, "Invalid primary destination address for new association");
-        return 1;
+        return 0;
     }else if(instance->noOfLocalAddresses <= 0 || instance->localAddressList == NULL)
 	{
 		error_log(ERROR_MAJOR, "No local address suppllied for new association");
-		return 1;
+		return 0;
 	}
 
-    if (currentAssociation) {
-        error_log(ERROR_MINOR, "current association not cleared");
-    }
+    Association *association = (Association *) malloc(sizeof(Association));
 
-    currentAssociation = (Association *) malloc(sizeof(Association));
-
-    if (!currentAssociation) {
+    if (!association) {
         error_log_sys(ERROR_FATAL, (short)errno);
-        return 1;
+        return 0;
     }
 
-    currentAssociation->sctpInstance = instance;
-    currentAssociation->localPort = local_port;
-    currentAssociation->remotePort = remote_port;
-    currentAssociation->tagLocal = tagLocal;
-    currentAssociation->assocId = mdi_getUnusedAssocId();
-    currentAssociation->tagRemote = 0;
-    currentAssociation->deleted = FALSE;
+    association->sctpInstance = instance;
+    association->localPort = local_port;
+    association->remotePort = remote_port;
+    association->tagLocal = tagLocal;
+    association->assocId = mdi_getUnusedAssocId();
+    association->tagRemote = 0;
+    association->deleted = FALSE;
 
-    currentAssociation->ulp_dataptr = NULL;
-    currentAssociation->ipTos = instance->default_ipTos;
-    currentAssociation->maxSendQueue = instance->default_maxSendQueue;
+    association->ulp_dataptr = NULL;
+    association->ipTos = instance->default_ipTos;
+    association->maxSendQueue = instance->default_maxSendQueue;
 
-    currentAssociation->had_IN6ADDR_ANY_set = instance->has_IN6ADDR_ANY_set;
-    currentAssociation->had_INADDR_ANY_set = instance->has_INADDR_ANY_set;
+    association->had_IN6ADDR_ANY_set = instance->has_IN6ADDR_ANY_set;
+    association->had_INADDR_ANY_set = instance->has_INADDR_ANY_set;
 
-    currentAssociation->noOfNetworks = noOfDestinationAddresses;
-    currentAssociation->destinationAddresses = /*array to store peer's addr*/
+    association->noOfNetworks = noOfDestinationAddresses;
+    association->destinationAddresses = /*array to store peer's addr*/
         (union sockunion *) malloc(noOfDestinationAddresses * sizeof(union sockunion));
-    if(!currentAssociation->destinationAddresses)
+    if(!association->destinationAddresses)
 	{
 		error_log_sys(ERROR_FATAL, (short)errno);
-        return 1;
+        return 0;
 	}
-    memcpy(currentAssociation->destinationAddresses, destinationAddressList,
+    memcpy(association->destinationAddresses, destinationAddressList,
          noOfDestinationAddresses * sizeof(union sockunion));
 
-	currentAssociation->noOfLocalAddresses = instance->noOfLocalAddresses;
-	currentAssociation->localAddresses =/*array to store local addrs*/
+	association->noOfLocalAddresses = instance->noOfLocalAddresses;
+	association->localAddresses =/*array to store local addrs*/
 		(union sockunion *) malloc(instance->noOfLocalAddresses * sizeof(union sockunion));
-    if(!currentAssociation->localAddresses)
+    if(!association->localAddresses)
 	{
 		error_log_sys(ERROR_FATAL, (short)errno);
-        return 1;
+        return 0;
 	}
-	memcpy(currentAssociation->localAddresses, instance->localAddressList,
+	memcpy(association->localAddresses, instance->localAddressList,
 				instance->noOfLocalAddresses * sizeof(union sockunion));
 	/* check if newly created association already exists. */
-    if (checkForExistingAssociations(currentAssociation) == 1) {
+    if (checkForExistingAssociations(association) == 1) {
         error_log(ERROR_MAJOR, "tried to establish an existing association");
         /* FIXME : also free bundling, pathmanagement,sctp_control */
-        free(currentAssociation->localAddresses);
-        free(currentAssociation->destinationAddresses);
-        free(currentAssociation);
-        currentAssociation = NULL;
-        return 1;
+        free(association->localAddresses);
+        free(association->destinationAddresses);
+        free(association);
+        association = NULL;
+        return 0;
     }
 
     /* initialize pointer to other modules of SCTP */
-    currentAssociation->flowControl = NULL;
-    currentAssociation->reliableTransfer = NULL;
-    currentAssociation->rx_control = NULL;
-    currentAssociation->streamengine = NULL;
+    association->flowControl = NULL;
+    association->reliableTransfer = NULL;
+    association->rx_control = NULL;
+    association->streamengine = NULL;
 
     /* only pathman, bundling and sctp-control are created at this point, the rest is created
        with mdi_initAssociation */
-    currentAssociation->bundling = bu_new();
-    currentAssociation->pathMan = pm_newPathman(noOfDestinationAddresses,
+    association->bundling = bu_new();
+    association->pathMan = pm_newPathman(noOfDestinationAddresses,
                                                 primaryDestinitionAddress, instance);
-    currentAssociation->sctp_control = sci_newSCTP_control(instance);
+    association->sctp_control = sci_newSCTP_control(instance);
 
-    currentAssociation->supportsPRSCTP = instance->supportsPRSCTP;
-    currentAssociation->peerSupportsPRSCTP = instance->supportsPRSCTP;
+    association->supportsPRSCTP = instance->supportsPRSCTP;
+    association->peerSupportsPRSCTP = instance->supportsPRSCTP;
 
-    currentAssociation->supportsADDIP = FALSE;
-    currentAssociation->peerSupportsADDIP = FALSE;
-	currentAssociation->assocType = ASSOCIATION_UNKNOWN;
+    association->supportsADDIP = FALSE;
+    association->peerSupportsADDIP = FALSE;
+	association->assocType = ASSOCIATION_UNKNOWN;
 
 
     event_logii(INTERNAL_EVENT_1, "new Association created ID=%08x, local tag=%08x",
-        currentAssociation->assocId, currentAssociation->tagLocal);
+        association->assocId, association->tagLocal);
 
     /* Enter association into list */
-    event_logi(INTERNAL_EVENT_0, "entering association %08x into list", currentAssociation->assocId);
+    event_logi(INTERNAL_EVENT_0, "entering association %08x into list", association->assocId);
 
-    AssociationList = g_list_insert_sorted(AssociationList, currentAssociation, &compareAssociationIDs);
+    AssociationList = g_list_insert_sorted(AssociationList, association, &compareAssociationIDs);
 
-    return 0;
+    return association->assocId;
 }                               /* end: mdi_newAssociation */
 
 /**
@@ -6026,6 +6008,8 @@ mdi_initAssociation(unsigned int remoteSideReceiverWindow,
     currentAssociation->flowControl =
         (void *) fc_new_flowcontrol(remoteSideReceiverWindow, localInitialTSN,
                                     currentAssociation->noOfNetworks, currentAssociation->maxSendQueue);
+
+	currentAssociation->sctpInstance->anotherInstance->default_myRwnd = remoteSideReceiverWindow;
 
     currentAssociation->rx_control = (void *) rxc_new_recvctrl(remoteInitialTSN,currentAssociation->noOfNetworks,
                                                                currentAssociation->sctpInstance);
