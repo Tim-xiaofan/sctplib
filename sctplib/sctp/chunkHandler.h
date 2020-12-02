@@ -326,6 +326,7 @@ ChunkID ch_makeChunk(SCTP_simple_chunk_wrapper * chunk);
 */
 void ch_deleteChunk(ChunkID chunkID);
 
+void ch_deleteChunkWrapper(SCTP_simple_chunk_wrapper *cw);
 
 
 /* ch_forgetChunk removes the chunk from the array of chunks without freeing the

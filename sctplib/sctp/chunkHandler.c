@@ -2506,7 +2506,29 @@ void ch_deleteChunk(ChunkID chunkID)
     }
 }
 
-
+void ch_deleteChunkWrapper(SCTP_simple_chunk_wrapper *cw)
+{
+	if(cw == NULL || cw->simpleChunk == NULL)
+	{
+		event_log(VVERBOSE, "attempt to delete a null chunk wrapper, a memory leak may have occured before");
+	}
+	else
+	{
+		if(cw->obj != NULL)
+		{
+			cw->simpleChunk = NULL;
+			adl_mempool_put(cw->obj);
+			event_log(INTERNAL_EVENT_0, "freed an chunk wrapper that is a adpk obj");
+		}
+		else
+		{
+			free(cw->simpleChunk);
+			cw->simpleChunk = NULL;
+			event_log(INTERNAL_EVENT_0, "freed an chunk wrapper that is not a adpk obj");
+		}
+		free(cw);
+	}
+}
 
 /* ch_forgetChunk removes the chunk from the array of chunks without freeing the
    memory allocated for that chunk.

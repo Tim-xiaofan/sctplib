@@ -74,6 +74,7 @@
 #endif
 
 
+
 /*------------------------ Default Definitions --------------------------------------------------*/
 static int      myRWND                      = 0x7FFF;
 static union    sockunion *myAddressList    = NULL;/*地址数量*/
@@ -150,6 +151,8 @@ typedef struct ASSOCIATION
         it is used as a key to find a association in the list,
         and never changes in the  live of the association  */
     unsigned int assocId;
+	/** the type of the TCB:UNKNOWN, ACTIVE, PASSIVE*/
+	unsigned short assocType;
     /** The local tag of this association. */
     unsigned int tagLocal;
     /** The tag of remote side of this association */
@@ -381,8 +384,8 @@ void mdi_displayAssociation(Association* assoc)
 		event_log(INTERNAL_EVENT_0, "mdi_displayAssociation: null assoc");
 		return;
 	}
-	printf("[assocId:%d, tagLocal:%0x, tagRemote:%0x] ",
-				assoc->assocId, assoc->tagLocal, assoc->tagRemote);
+	printf("assocId[%d], tagLocal[%0x], tagRemote[%0x], assocType[%u] ",
+				assoc->assocId, assoc->tagLocal, assoc->tagRemote, assoc->assocType);
 	printf("local addrs[%d]:", assoc->noOfLocalAddresses);
 	int i;
 	for(i = 0; i< assoc->noOfLocalAddresses; i++)
@@ -411,7 +414,6 @@ void mdi_displayAssociationList(GList *list)
 		Association *tmp = (Association *)gl->data;
 		mdi_displayAssociation(tmp);
 	}
-
 }
 
 
@@ -4803,50 +4805,81 @@ unsigned int mdi_getPathByLastFromAddress(union sockunion *lastFromAddress)
 	return 0;
 }
 
-/* get the sctp control of TCB A' when create TCB B'*/
-unsigned int mdi_readAssociationIdOfTCBA(void)
+/* get the ID of another TCB by type*/
+unsigned int mdi_readAssociationIdByType(unsigned short type)
 {
-	if(sctpInstance == NULL)
+	if(currentAssociation == NULL || currentAssociation->assocType != type)
 	{
-		event_log(VVERBOSE, "mdi_readAssociationIdOfTCBA:no instance to handle the datagram");
-		return 0;
-	}else if(sctpInstance->anotherInstance == NULL)
-	{
-		event_logi(VVERBOSE, "mdi_readAssociationIdOfTCBA:no anotherInstance for sctpInstance[%u]", 
-					sctpInstance->sctpInstanceName);
-		return 0;
+		if(sctpInstance == NULL)
+		{
+			event_log(VVERBOSE, "mdi_readAssociationIdByType:no instance to handle the datagram");
+			return 0;
+		}
+		else if(sctpInstance->anotherInstance == NULL)
+		{
+			event_logi(VVERBOSE, "mdi_readAssociationIdByType:no anotherInstance for sctpInstance[%u]", 
+						sctpInstance->sctpInstanceName);
+			return 0;
+		}
+		Association *assoc = retrieveAssociationBySctpInstacneName(
+					sctpInstance->anotherInstance->sctpInstanceName);
+		if(assoc == NULL)
+		{
+			event_logi(VVERBOSE, "mdi_readAssociationIdByType:cannot get association from sctpInstanceName %u", 
+						sctpInstance->anotherInstance->sctpInstanceName);
+			return 0;
+		}
+		else if(assoc->assocType != type)
+		{
+			event_logii(VVERBOSE,
+						"mdi_readAssociationIdByType:cannot get sctp control by assoc type: got %u, need %u",
+						assoc->assocType, type);
+			return 0;
+		}
+		return assoc->assocId;
 	}
-	Association *assoc = retrieveAssociationBySctpInstacneName(
-				sctpInstance->anotherInstance->sctpInstanceName);
-	if(assoc == NULL)
-	{
-		event_log(VVERBOSE, "mdi_readAssociationIdOfTCBA:cannot get association from sctpInstanceName");
-		return 0;
-	}
-	return assoc->assocId;
+	else return currentAssociation->assocId;
 }
 
-/* get the sctp control of TCB A' when create TCB B'*/
-void *mdi_readSctpControlOfTCBA(void)
+/* get the sctp control of TCB byte*/
+void *mdi_readSctpControlByAssociationType(unsigned short type)
 {
-	if(sctpInstance == NULL)
+	if(currentAssociation == NULL || currentAssociation->assocType != type)
 	{
-		event_log(VVERBOSE, "mdi_readSctpControlOfTCBA:no instance to handle the datagram");
-		return NULL;
-	}else if(sctpInstance->anotherInstance == NULL)
-	{
-		event_logi(VVERBOSE, "mdi_readSctpControlOfTCBA:no anotherInstance for sctpInstance[%u]", 
-					sctpInstance->sctpInstanceName);
-		return NULL;
+		if(sctpInstance == NULL)
+		{
+			event_log(VVERBOSE, "mdi_readSctpControlByAssociationType:no instance to handle the datagram");
+			return NULL;
+		}
+		else if(sctpInstance->anotherInstance == NULL)
+		{
+			event_logi(VVERBOSE, "mdi_readSctpControlByAssociationType:no anotherInstance for sctpInstance[%u]", 
+						sctpInstance->sctpInstanceName);
+			return NULL;
+		}
+		Association *assoc = retrieveAssociationBySctpInstacneName(
+					sctpInstance->anotherInstance->sctpInstanceName);
+		if(assoc == NULL)
+		{
+			event_logi(VVERBOSE, "mdi_readSctpControlByAssociationType:cannot get association from sctpInstanceName %u",
+						sctpInstance->anotherInstance->sctpInstanceName);
+			return NULL;
+		}
+		else if(assoc->assocType != type)
+		{
+			event_logii(VVERBOSE,
+						"mdi_readSctpControlByAssociationType:cannot get sctp control by assoc type: got %u, need %u",
+						assoc->assocType, type);
+			return NULL;
+		}
+		event_logi(VVERBOSE, "mdi_readSctpControlByAssociationType:got a sctp_control from association %u", assoc->assocId);
+		return assoc->sctp_control;
 	}
-	Association *assoc = retrieveAssociationBySctpInstacneName(
-				sctpInstance->anotherInstance->sctpInstanceName);
-	if(assoc == NULL)
+	else 
 	{
-		event_log(VVERBOSE, "mdi_readSctpControlOfTCBA:no cannot get association from sctpInstanceName");
-		return NULL;
+		event_logi(VVERBOSE, "mdi_readSctpControlByAssociationType:got a sctp_control from association %u", currentAssociation->assocId);
+		return currentAssociation->sctp_control;
 	}
-	return assoc->sctp_control;
 }
 
 /**
@@ -5592,6 +5625,28 @@ unsigned short mdi_clearAssociationData(void)
     return 0;
 }
 
+int mdi_setAssociationType(unsigned short type)
+{
+	event_log(VVERBOSE, "mdi_setAssociationType is called");
+	if(currentAssociation->assocType != ASSOCIATION_UNKNOWN)
+	{
+		event_log(VVERBOSE, "current association is not ASSOCIATION_UNKNOWN");
+		return -1;
+	}
+	if(type == ASSOCIATION_ACTIVE || type == ASSOCIATION_PASSIVE)
+	{
+		currentAssociation->assocType = type;
+		event_logi(VVERBOSE, "success to set assocType to type %u", type);
+		return 0;
+	}
+	else if(type == ASSOCIATION_UNKNOWN)
+	{
+		event_log(VVERBOSE, "not alloed to set assocType to type ASSOCIATION_UNKNOWN");
+		return -1;
+	}
+	event_logi(VVERBOSE, "unknown type %u", type);
+	return -1;
+}
 /*force to set currentAssociation by associationID
  *@param assocID	which association is set to currentAssociation
  *@return the old one ID*/
@@ -5752,6 +5807,7 @@ newAssociation(void*  sInstance,
 
     currentAssociation->supportsADDIP = FALSE;
     currentAssociation->peerSupportsADDIP = FALSE;
+	currentAssociation->assocType = ASSOCIATION_UNKNOWN;
 
 
     event_logii(INTERNAL_EVENT_1, "new Association created ID=%08x, local tag=%08x",
@@ -5841,6 +5897,7 @@ mdi_newAssociation(void*  sInstance,
     currentAssociation->remotePort = remote_port;
     currentAssociation->tagLocal = tagLocal;
     currentAssociation->assocId = mdi_getUnusedAssocId();
+	currentAssociation->assocType = ASSOCIATION_UNKNOWN;
     currentAssociation->tagRemote = 0;
     currentAssociation->deleted = FALSE;
 

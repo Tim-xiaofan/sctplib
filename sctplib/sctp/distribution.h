@@ -71,6 +71,11 @@
 #define RTO_MAX                 60000
 
 #define SCTP_MAX_IP_LEN 46
+
+/*association type*/
+#define ASSOCIATION_UNKNOWN 0
+#define ASSOCIATION_ACTIVE	1
+#define ASSOCIATION_PASSIVE	2
 /******************** Function Definitions ********************************************************/
 
 /*------------------- Functions called by the ULP ------------------------------------------------*/
@@ -213,8 +218,8 @@ unsigned int mdi_retrieveInstanceNameByTansportAddress(unsigned short localPort,
    of type void.
 */
 
-void *mdi_readSctpControlOfTCBA(void);
-unsigned int mdi_readAssociationIdOfTCBA(void);
+unsigned int mdi_readAssociationIdByType(unsigned short type);
+void *mdi_readSctpControlByAssociationType(unsigned short type);
 /*
  * returns: pointer to the flow control data structure.
  *          null in case of error.
@@ -287,6 +292,7 @@ void *mdi_readInstanceSendRing(void);
 unsigned int mdi_generateTag(void);
 
 int mdi_setSeletedSendRing(void *send_ring);
+int mdi_setAssociationType(unsigned short);
 
 
 unsigned int mdi_readTagRemote(void);

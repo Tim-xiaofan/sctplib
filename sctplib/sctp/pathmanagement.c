@@ -386,7 +386,7 @@ void pm_heartbeatTimer(TimerID timerID, void *associationIDvoid, void *pathIDvoi
         /* send heartbeat if no chunks have been acked in the last HB-intervall (path is idle). */
         event_log(VERBOSE, "--------------> Sending HB");
         heartbeatCID = ch_makeHeartbeat(pm_getTime(), pathID);
-        bu_put_Ctrl_Chunk(ch_chunkString(heartbeatCID), &pathID);
+        bu_put_Ctrl_Chunk(ch_chunkString(heartbeatCID)->simpleChunk, &pathID);
         bu_sendAllChunks(&pathID);
         ch_deleteChunk(heartbeatCID);
         pmData->pathData[pathID].heartbeatSent = TRUE;
@@ -451,7 +451,7 @@ int pm_doHB(gshort pathID)
     }
     pid = (guint32)pathID;
     heartbeatCID = ch_makeHeartbeat(pm_getTime(), pathID);
-    bu_put_Ctrl_Chunk(ch_chunkString(heartbeatCID),&pid);
+    bu_put_Ctrl_Chunk(ch_chunkString(heartbeatCID)->simpleChunk, &pid);
     bu_sendAllChunks(&pid);
     ch_deleteChunk(heartbeatCID);
     pmData->pathData[pathID].heartbeatSent = TRUE;
@@ -492,7 +492,7 @@ void pm_heartbeatAck(SCTP_heartbeat * heartbeatChunk)
 		error_logi(ERROR_FATAL, "pm_heartbeatAck:cannot alloc memory for cw %s", strerror(errno));
 		return;
 	}
-	cw->simpleChunk = heartbeatChunk;
+	cw->simpleChunk = (SCTP_simple_chunk *)heartbeatChunk;
 	cw->obj = obj;
     heartbeatCID = ch_makeChunk(cw);
     pathID = ch_HBpathID(heartbeatCID);
